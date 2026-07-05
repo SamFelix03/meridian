@@ -96,6 +96,7 @@ async function issuePostedReceivable(
   client: JsonLedgerClient,
   supplier: string,
   buyer: string,
+  platformOperator: string,
   proposalId: string
 ): Promise<string> {
   const proposeResult = await client.submitAndWaitForTransaction({
@@ -118,7 +119,13 @@ async function issuePostedReceivable(
 
   const issueResult = await client.submitAndWaitForTransaction({
     actAs: [buyer],
-    commands: [buildCoSignAndIssueCommand(proposalCid)],
+    commands: [
+      buildCoSignAndIssueCommand({
+        proposalContractId: proposalCid,
+        jurisdiction: "US",
+        platformOperator,
+      }),
+    ],
   });
   const receivableCid = extractCreatedContractId(issueResult);
   assert.ok(receivableCid, "receivable contract id missing");
@@ -235,6 +242,7 @@ async function main(): Promise<void> {
   const buyer = party(manifest, "meridian-buyer");
   const financierA = party(manifest, "meridian-financier-a");
   const financierB = party(manifest, "meridian-financier-b");
+  const platformOperator = party(manifest, "meridian-platform");
 
   const auth = new DevNetAuthClient(loadDevNetConfigFromEnv());
   const client = await auth.createAuthenticatedLedgerClient();
@@ -244,6 +252,7 @@ async function main(): Promise<void> {
     client,
     supplier,
     buyer,
+    platformOperator,
     `P2-PRIV-${Date.now()}`
   );
   const privacyRequestId = `ROUND-PRIV-${Date.now()}`;
@@ -279,6 +288,7 @@ async function main(): Promise<void> {
     client,
     supplier,
     buyer,
+    platformOperator,
     `P2-UNINV-${Date.now()}`
   );
   const uninvitedRequestId = `ROUND-UNINV-${Date.now()}`;
@@ -324,6 +334,7 @@ async function main(): Promise<void> {
     client,
     supplier,
     buyer,
+    platformOperator,
     `P2-FUND-${Date.now()}`
   );
   const fundRequestId = `ROUND-FUND-${Date.now()}`;
@@ -377,6 +388,7 @@ async function main(): Promise<void> {
     client,
     supplier,
     buyer,
+    platformOperator,
     `P2-STALE-${Date.now()}`
   );
   const staleRequestId = `ROUND-STALE-${Date.now()}`;
@@ -410,6 +422,7 @@ async function main(): Promise<void> {
     client,
     supplier,
     buyer,
+    platformOperator,
     `P2-PAUSE-${Date.now()}`
   );
   const pauseRequestId = `ROUND-PAUSE-${Date.now()}`;

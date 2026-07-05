@@ -55,6 +55,21 @@ describe("PartyProvisionerService", () => {
     );
   });
 
+  it("rejects allocation with pending KYB verification", async () => {
+    await assert.rejects(
+      () =>
+        service.allocate({
+          orgId: "org1",
+          legalEntityId: "le1",
+          partyHint: "meridian-supplier-1",
+          role: "Supplier",
+          jurisdiction: "US",
+          verificationId: "pending-kyb-id",
+        }),
+      (err: Error) => err instanceof ProvisionerError && err.code === "KYB_NOT_APPROVED"
+    );
+  });
+
   it("rejects allocation with invalid KYB verification", async () => {
     await assert.rejects(
       () =>

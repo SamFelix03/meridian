@@ -23,6 +23,9 @@ template ReceivableProposal
     ensure faceValue >= 0.0
 
     choice CoSignAndIssue : ContractId Receivable
+      with
+        jurisdiction : Optional Text
+        platformOperator : Party
       controller buyer
       do
         consentGranted <- resolveConsent consentSource
@@ -41,12 +44,14 @@ template ReceivableProposal
           payeeOfRecord = PayeeOfRecord with
             payee = supplier
             payeeRole = "Supplier"
-          jurisdiction = None
+          jurisdiction
           invitedFinanciers = []
           capTable = []
           fundedPricingHidden = False
           bidHistory = []
           repaymentProofCid = None
+          platformOperator
+          complianceObservers = []
 
     choice Withdraw : ()
       controller supplier

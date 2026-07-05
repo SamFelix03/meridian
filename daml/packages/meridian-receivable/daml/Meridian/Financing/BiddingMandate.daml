@@ -1,0 +1,63 @@
+module Meridian.Financing.BiddingMandate where
+
+import DA.Optional
+
+-- | On-ledger constraint set for mandate-constrained agentic bidding (§7.9).
+template BiddingMandate
+  with
+    mandateId : Text
+    financier : Party
+    maxExposure : Decimal
+    minSpread : Decimal
+    eligibleSuppliers : [Party]
+    agentEnabled : Bool
+    revoked : Bool
+  where
+    signatory financier
+
+    ensure
+      maxExposure > 0.0
+      && minSpread >= 0.0
+
+    choice Revoke : ContractId BiddingMandate
+      controller financier
+      do create this with revoked = True
+
+    choice UpdateConstraints : ContractId BiddingMandate
+      with
+        maxExposure : Decimal
+        minSpread : Decimal
+        eligibleSuppliers : [Party]
+      controller financier
+      do
+        assertMsg "Cannot update revoked mandate" (not revoked)
+        assertMsg "Max exposure must be positive" (maxExposure > 0.0)
+        create this with
+          maxExposure
+          minSpread
+          eligibleSuppliers
+
+    choice SetAgentEnabled : ContractId BiddingMandate
+      with enabled : Bool
+      controller financier
+      do
+        assertMsg "Cannot enable agent on revoked mandate" (not revoked || not enabled)
+        create this with agentEnabled = enabled
+
+createBiddingMandate :
+  Text
+  -> Party
+  -> Decimal
+  -> Decimal
+  -> [Party]
+  -> Bool
+  -> Update (ContractId BiddingMandate)
+createBiddingMandate mandateId financier maxExposure minSpread eligibleSuppliers agentEnabled =
+  create BiddingMandate with
+    mandateId
+    financier
+    maxExposure
+    minSpread
+    eligibleSuppliers
+    agentEnabled
+    revoked = False

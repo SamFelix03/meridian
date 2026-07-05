@@ -1,0 +1,19 @@
+module Meridian.Settlement.SettlementAuditRecord where
+
+import DA.Time
+import Meridian.Settlement.Types
+
+-- | Platform-operator-visible audit record with no commercial pricing (§10.4).
+template SettlementAuditRecord
+  with
+    recordId : Text
+    receivableId : Text
+    requestId : Text
+    finality : SettlementFinality
+    settledAt : Time
+    supplier : Party
+    financier : Party
+    platformOperator : Party
+  where
+    signatory supplier, financier
+    observer platformOperator

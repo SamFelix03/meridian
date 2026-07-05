@@ -1,12 +1,18 @@
 import { useEffect } from "react";
 import type {
+  AgentRunStatus,
   BidComparisonRow,
   BidPricingMode,
   BidSummary,
+  BiddingMandateSummary,
   CapTableEntry,
   FinancingRequestSummary,
+  OracleHealthStatus,
   ParticipationInterestSummary,
+  RegulatorExposureRollup,
+  RegulatorJurisdictionGrantSummary,
   RoundState,
+  SettlementFinalitySummary,
   SyndicationBidSummary,
   SyndicationOfferingSummary,
 } from "@meridian/shared-types";
@@ -166,6 +172,36 @@ export const api = {
     fetchJson<{ invitations: FinancierInvitation[] }>("/financier/invitations"),
   getFinancierMyBids: () =>
     fetchJson<{ bids: BidSummary[] }>("/financier/my-bids"),
+  getFinancierMandates: () =>
+    fetchJson<{ mandates: BiddingMandateSummary[] }>("/financier/mandates"),
+  createFinancierMandate: (body: {
+    mandateId: string;
+    maxExposure: string;
+    minSpread: string;
+    eligibleSuppliers?: string[];
+    agentEnabled?: boolean;
+  }) =>
+    fetchJson<{ contractId: string }>("/financier/mandates", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  updateFinancierMandate: (
+    mandateContractId: string,
+    body: {
+      action?: "revoke" | "update" | "setAgentEnabled";
+      maxExposure?: string;
+      minSpread?: string;
+      eligibleSuppliers?: string[];
+      agentEnabled?: boolean;
+    }
+  ) =>
+    fetchJson<{ contractId: string }>(
+      `/financier/mandates/${encodeURIComponent(mandateContractId)}`,
+      { method: "PATCH", body: JSON.stringify(body) }
+    ),
+  getAgentStatus: () => fetchJson<AgentRunStatus>("/financier/agent/status"),
+  triggerAgentTick: () =>
+    fetchJson<AgentRunStatus>("/financier/agent/tick", { method: "POST", body: "{}" }),
   submitFinancingBid: (
     requestContractId: string,
     body: { advanceAmount: string; discountRate: string; useStaticReference?: boolean }
@@ -249,6 +285,52 @@ export const api = {
       `/syndication/${encodeURIComponent(offeringContractId)}/award`,
       { method: "POST", body: JSON.stringify(body) }
     ),
+  getOpsSettlementFinality: () =>
+    fetchJson<{ summary: SettlementFinalitySummary }>("/ops/settlement-finality"),
+  getOpsOracleHealth: () => fetchJson<OracleHealthStatus>("/ops/oracle-health"),
+  getOpsRegulatorGrants: () =>
+    fetchJson<{ grants: RegulatorJurisdictionGrantSummary[] }>("/ops/regulator-grants"),
+  createOpsRegulatorGrant: (body: { grantId?: string; jurisdiction: string }) =>
+    fetchJson<{ contractId: string }>("/ops/regulator-grants", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  revokeOpsRegulatorGrant: (contractId: string) =>
+    fetchJson<{ contractId: string }>(`/ops/regulator-grants/${encodeURIComponent(contractId)}`, {
+      method: "PATCH",
+      body: JSON.stringify({ action: "revoke" }),
+    }),
+  grantRegulatorObserver: (receivableContractId: string, jurisdiction: string) =>
+    fetchJson<{ receivableContractId: string }>(
+      `/ops/receivables/${encodeURIComponent(receivableContractId)}/grant-observer`,
+      { method: "POST", body: JSON.stringify({ jurisdiction }) }
+    ),
+  getRegulatorExposure: (jurisdiction?: string) =>
+    fetchJson<{ rollups: RegulatorExposureRollup[] }>(
+      jurisdiction
+        ? `/regulator/exposure?jurisdiction=${encodeURIComponent(jurisdiction)}`
+        : "/regulator/exposure"
+    ),
+  verifyKyb: (body: {
+    legalEntityId: string;
+    jurisdiction: string;
+    requestedRoles: string[];
+    complianceProfile?: string;
+  }) =>
+    fetchJson<{ status: string; verificationId: string }>("/kyb/verify", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
+  completeKyb: (verificationId: string, decision: "APPROVED" | "REJECTED", reason?: string) =>
+    fetchJson<{ status: string; verificationId: string }>(
+      `/kyb/verify/${encodeURIComponent(verificationId)}/complete`,
+      { method: "POST", body: JSON.stringify({ decision, reason }) }
+    ),
+  allocateParty: (body: Record<string, unknown>) =>
+    fetchJson<Record<string, unknown>>("/parties/allocate", {
+      method: "POST",
+      body: JSON.stringify(body),
+    }),
 };
 
 export function useNotifications(orgId: string, onEvent: () => void): void {

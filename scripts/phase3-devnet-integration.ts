@@ -104,6 +104,7 @@ async function issuePostedReceivable(
   client: JsonLedgerClient,
   supplier: string,
   buyer: string,
+  platformOperator: string,
   proposalId: string,
   dueDate = "2026-12-31"
 ): Promise<string> {
@@ -127,7 +128,13 @@ async function issuePostedReceivable(
 
   const issueResult = await client.submitAndWaitForTransaction({
     actAs: [buyer],
-    commands: [buildCoSignAndIssueCommand(proposalCid)],
+    commands: [
+      buildCoSignAndIssueCommand({
+        proposalContractId: proposalCid,
+        jurisdiction: "US",
+        platformOperator,
+      }),
+    ],
   });
   const receivableCid = extractCreatedContractId(issueResult);
   assert.ok(receivableCid, "receivable contract id missing");
@@ -236,6 +243,7 @@ async function main(): Promise<void> {
   const buyer = party(manifest, "meridian-buyer");
   const financierA = party(manifest, "meridian-financier-a");
   const financierB = party(manifest, "meridian-financier-b");
+  const platformOperator = party(manifest, "meridian-platform");
   const cash = loadCashManifest(ROOT);
 
   const auth = new DevNetAuthClient(loadDevNetConfigFromEnv());
@@ -261,7 +269,7 @@ async function main(): Promise<void> {
   console.log("\n2. Award DvP — supplier MUSD increases, receivable Funded...");
   const proposalId = `P3-DVP-${Date.now()}`;
   const requestId = `ROUND-P3-${Date.now()}`;
-  const postedCid = await issuePostedReceivable(client, supplier, buyer, proposalId);
+  const postedCid = await issuePostedReceivable(client, supplier, buyer, platformOperator, proposalId);
   const round = await openFinancingRound(
     client,
     supplier,
@@ -335,6 +343,7 @@ async function main(): Promise<void> {
     client,
     supplier,
     buyer,
+    platformOperator,
     `${overdueProposalId}-future`,
     "2026-12-31"
   );
@@ -371,6 +380,7 @@ async function main(): Promise<void> {
     client,
     supplier,
     buyer,
+    platformOperator,
     overdueProposalId,
     "2020-01-01"
   );
@@ -407,7 +417,7 @@ async function main(): Promise<void> {
   console.log("\n6. Phase 2 regression — sealed bid privacy...");
   const privProposal = `P3-PRIV-${Date.now()}`;
   const privRequestId = `ROUND-PRIV-${Date.now()}`;
-  const privPosted = await issuePostedReceivable(client, supplier, buyer, privProposal);
+  const privPosted = await issuePostedReceivable(client, supplier, buyer, platformOperator, privProposal);
   const privRound = await openFinancingRound(
     client,
     supplier,

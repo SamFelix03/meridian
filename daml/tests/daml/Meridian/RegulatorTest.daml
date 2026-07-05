@@ -1,0 +1,194 @@
+module Meridian.RegulatorTest where
+
+import Daml.Script
+import DA.Time
+import DA.Date
+import DA.Optional
+import DA.List (find)
+import Meridian.Receivable.AssignmentConsentPolicy hiding (Revoke)
+import Meridian.Receivable.Types
+import Meridian.Receivable.Receivable
+import Meridian.Receivable.ReceivableProposal
+import Meridian.Receivable.Interfaces
+import Meridian.Financing.FinancingRequest
+import Meridian.Financing.Bid
+import Meridian.Financing.Types
+import Meridian.Compliance.RegulatorJurisdictionGrant
+import Meridian.Settlement.SettlementAuditRecord
+import Meridian.Settlement.Types
+import Meridian.FinancingTest (openSampleRound, submitOracleBid, awardBidWithCash)
+import Meridian.FinancingFixtures
+
+lookupRegulatorView : Party -> ContractId Receivable -> Script (Optional RegulatorViewData)
+lookupRegulatorView p receivableCid = do
+  rows <- queryInterface @IRegulatorView p
+  let ifaceCid = toInterfaceContractId @IRegulatorView receivableCid
+  pure (join (fmap snd (find (\(cid, _) -> cid == ifaceCid) rows)))
+
+issueFundedReceivable :
+  Party
+  -> Party
+  -> Party
+  -> Party
+  -> Party
+  -> Script (ContractId Receivable)
+issueFundedReceivable admin supplier buyer financier platformOp = do
+  proposalCid <- submit supplier do
+    createCmd ReceivableProposal with
+      proposalId = "REG-001"
+      supplier
+      buyer
+      lineItems =
+        [ LineItem with description = "Reg services"; quantity = 1.0; unitPrice = 2000.0 ]
+      faceValue = 2000.0
+      currency = "USD"
+      dueDate = date 2026 Dec 31
+      consentSource = InlineConsent True
+  receivableCid <- submit buyer do
+    exerciseCmd proposalCid CoSignAndIssue with
+      jurisdiction = Some "US"
+      platformOperator = platformOp
+  postedCid <- submit supplier do exerciseCmd receivableCid PostForBid
+  reqCid <- openSampleRound postedCid supplier [financier]
+  (reqCid1, bidCid) <- submitOracleBid reqCid financier 1500.0 0.05
+  fundedCid <- awardBidWithCash admin supplier financier reqCid1 bidCid 1500.0
+  pure fundedCid
+
+testRegulatorViewAfterGrant : Script ()
+testRegulatorViewAfterGrant = script do
+  admin <- allocateParty "Registry"
+  supplier <- allocateParty "Supplier"
+  buyer <- allocateParty "Buyer"
+  financier <- allocateParty "Financier"
+  platformOp <- allocateParty "PlatformOp"
+  regulator <- allocateParty "Regulator"
+
+  fundedCid <- issueFundedReceivable admin supplier buyer financier platformOp
+
+  observedCid <- submit platformOp do
+    exerciseCmd fundedCid GrantComplianceObserver with
+      observerParty = regulator
+      expectedJurisdiction = "US"
+
+  regulatorView <- lookupRegulatorView regulator observedCid
+  assert (isSome regulatorView)
+  let Some rv = regulatorView
+  assert (rv.jurisdiction == Some "US")
+  assert (rv.aggregateExposure == 2000.0)
+
+  pure ()
+
+testRegulatorCannotSeeBid : Script ()
+testRegulatorCannotSeeBid = script do
+  admin <- allocateParty "Registry"
+  supplier <- allocateParty "Supplier"
+  buyer <- allocateParty "Buyer"
+  financier <- allocateParty "Financier"
+  platformOp <- allocateParty "PlatformOp"
+  regulator <- allocateParty "Regulator"
+
+  fundedCid <- issueFundedReceivable admin supplier buyer financier platformOp
+  _ <- submit platformOp do
+    exerciseCmd fundedCid GrantComplianceObserver with
+      observerParty = regulator
+      expectedJurisdiction = "US"
+
+  bids <- query @Bid regulator
+  assert (null bids)
+
+  pure ()
+
+testRegulatorCannotExerciseChoices : Script ()
+testRegulatorCannotExerciseChoices = script do
+  admin <- allocateParty "Registry"
+  supplier <- allocateParty "Supplier"
+  buyer <- allocateParty "Buyer"
+  financier <- allocateParty "Financier"
+  platformOp <- allocateParty "PlatformOp"
+  regulator <- allocateParty "Regulator"
+
+  fundedCid <- issueFundedReceivable admin supplier buyer financier platformOp
+  grantedCid <- submit platformOp do
+    exerciseCmd fundedCid GrantComplianceObserver with
+      observerParty = regulator
+      expectedJurisdiction = "US"
+
+  submitMustFail regulator do exerciseCmd grantedCid PostForBid
+  submitMustFail regulator do
+    exerciseCmd grantedCid GrantComplianceObserver with
+      observerParty = regulator
+      expectedJurisdiction = "US"
+
+  pure ()
+
+testJurisdictionMismatchGrantFails : Script ()
+testJurisdictionMismatchGrantFails = script do
+  admin <- allocateParty "Registry"
+  supplier <- allocateParty "Supplier"
+  buyer <- allocateParty "Buyer"
+  financier <- allocateParty "Financier"
+  platformOp <- allocateParty "PlatformOp"
+  regulator <- allocateParty "Regulator"
+
+  fundedCid <- issueFundedReceivable admin supplier buyer financier platformOp
+
+  submitMustFail platformOp do
+    exerciseCmd fundedCid GrantComplianceObserver with
+      observerParty = regulator
+      expectedJurisdiction = "EU"
+
+  pure ()
+
+testSettlementAuditRecordNoPricing : Script ()
+testSettlementAuditRecordNoPricing = script do
+  admin <- allocateParty "Registry"
+  supplier <- allocateParty "Supplier"
+  buyer <- allocateParty "Buyer"
+  financier <- allocateParty "Financier"
+  platformOp <- allocateParty "PlatformOp"
+
+  _ <- issueFundedReceivable admin supplier buyer financier platformOp
+
+  audits <- query @SettlementAuditRecord platformOp
+  case audits of
+    [] -> abort "expected settlement audit record"
+    ((_, audit) :: _) -> do
+      assert (audit.finality == Atomic)
+      assert (audit.receivableId == "REG-001")
+
+  pure ()
+
+testManualBidWithoutRegulatorObserver : Script ()
+testManualBidWithoutRegulatorObserver = script do
+  admin <- allocateParty "Registry"
+  supplier <- allocateParty "Supplier"
+  buyer <- allocateParty "Buyer"
+  financier <- allocateParty "Financier"
+  platformOp <- allocateParty "PlatformOp"
+  regulator <- allocateParty "Regulator"
+
+  fundedCid <- issueFundedReceivable admin supplier buyer financier platformOp
+
+  regulatorView <- lookupRegulatorView regulator fundedCid
+  assert (regulatorView == None)
+
+  pure ()
+
+testRegulatorJurisdictionGrant : Script ()
+testRegulatorJurisdictionGrant = script do
+  platformOp <- allocateParty "PlatformOp"
+  regulator <- allocateParty "Regulator"
+
+  grantCid <- submit platformOp do
+    createCmd RegulatorJurisdictionGrant with
+      grantId = "GRANT-US"
+      platformOperator = platformOp
+      regulator
+      jurisdiction = "US"
+      active = True
+
+  revokedCid <- submit platformOp do exerciseCmd grantCid Revoke
+  Some revoked <- queryContractId platformOp revokedCid
+  assert (not revoked.active)
+
+  pure ()

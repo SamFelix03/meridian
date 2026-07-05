@@ -14,6 +14,7 @@ import Meridian.Financing.Bid
 import Meridian.FinancingFixtures
 import Meridian.Cash.Registry
 import Meridian.CashFixtures
+import Meridian.Settlement.Types
 import Meridian.FinancingTest (issuePostedReceivable, openSampleRound, submitOracleBid)
 
 sampleDueDate : Date
@@ -39,6 +40,7 @@ awardWithDvP admin supplier financier reqCid bidCid advance = do
       settlementAllocationCid = allocCid
       expectedAdvance = advance
       settlementFinancier = financier
+      settlementFinality = Atomic
   pure (fundedCid, registryCid, rulesCid)
 
 testAwardDvPAndFund : Script ()

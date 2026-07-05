@@ -16,6 +16,7 @@ import Meridian.Financing.Bid
 import Meridian.Financing.Types
 import Meridian.FinancingFixtures
 import Meridian.CashFixtures
+import Meridian.Settlement.Types
 
 sampleDueDate : Date
 sampleDueDate = date 2026 Dec 31
@@ -25,6 +26,7 @@ roundDeadline = addRelTime sampleOracleLedgerTime (days 7)
 
 issuePostedReceivable : Party -> Party -> Script (ContractId Receivable)
 issuePostedReceivable supplier buyer = do
+  platformOp <- allocateParty "PlatformOp"
   proposalCid <- submit supplier do
     createCmd ReceivableProposal with
       proposalId = "FIN-001"
@@ -36,7 +38,10 @@ issuePostedReceivable supplier buyer = do
       currency = "USD"
       dueDate = sampleDueDate
       consentSource = InlineConsent True
-  receivableCid <- submit buyer do exerciseCmd proposalCid CoSignAndIssue
+  receivableCid <- submit buyer do
+    exerciseCmd proposalCid CoSignAndIssue with
+      jurisdiction = Some "US"
+      platformOperator = platformOp
   submit supplier do exerciseCmd receivableCid PostForBid
 
 openSampleRound :
@@ -74,6 +79,8 @@ submitOracleBid reqCid financier advance discount = do
       redstoneTimestampMs = sampleRedstoneTimestampMs
       mode = OracleAnchored
       ledgerTime = sampleOracleLedgerTime
+      viaAgent = False
+      mandateCid = None
 
 awardBidWithCash admin supplier financier reqCid bidCid advance = do
   now <- getTime
@@ -87,6 +94,7 @@ awardBidWithCash admin supplier financier reqCid bidCid advance = do
       settlementAllocationCid = allocCid
       expectedAdvance = advance
       settlementFinancier = financier
+      settlementFinality = Atomic
 
 testFullRoundHappyPath : Script ()
 testFullRoundHappyPath = script do
@@ -148,6 +156,8 @@ testUninvitedFinancierNegative = script do
       redstoneTimestampMs = sampleRedstoneTimestampMs
       mode = OracleAnchored
       ledgerTime = sampleOracleLedgerTime
+      viaAgent = False
+      mandateCid = None
 
   pure ()
 
@@ -170,6 +180,8 @@ testOneBidPerFinancier = script do
       redstoneTimestampMs = sampleRedstoneTimestampMs
       mode = OracleAnchored
       ledgerTime = sampleOracleLedgerTime
+      viaAgent = False
+      mandateCid = None
 
   pure ()
 
@@ -191,6 +203,8 @@ testOracleStaleRejected = script do
       redstoneTimestampMs = sampleRedstoneTimestampMs
       mode = OracleAnchored
       ledgerTime = staleOracleLedgerTime
+      viaAgent = False
+      mandateCid = None
 
   pure ()
 
@@ -212,6 +226,8 @@ testOracleMissingRejected = script do
       redstoneTimestampMs = sampleRedstoneTimestampMs
       mode = OracleAnchored
       ledgerTime = sampleOracleLedgerTime
+      viaAgent = False
+      mandateCid = None
 
   pure ()
 
@@ -277,6 +293,8 @@ testDeadlineBoundary = script do
       redstoneTimestampMs = sampleRedstoneTimestampMs
       mode = OracleAnchored
       ledgerTime = roundDeadline
+      viaAgent = False
+      mandateCid = None
 
   now <- getTime
   (registryCid, rulesCid) <- bootstrapCashRegistry admin
@@ -290,6 +308,7 @@ testDeadlineBoundary = script do
       settlementAllocationCid = allocCid
       expectedAdvance = 1500.0
       settlementFinancier = finA
+      settlementFinality = Atomic
 
   pure ()
 
@@ -313,6 +332,8 @@ testReplaceBid = script do
       redstoneTimestampMs = sampleRedstoneTimestampMs
       mode = OracleAnchored
       ledgerTime = sampleOracleLedgerTime
+      viaAgent = False
+      mandateCid = None
 
   finABids <- query @Bid finA
   assert (length finABids == 1)

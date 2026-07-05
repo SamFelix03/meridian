@@ -18,7 +18,7 @@ const DAR_DIRS = [
 ];
 
 const REQUIRED_DARS = [
-  join(ROOT, "daml/packages/meridian-receivable/.daml/dist/com-meridian-receivable-v4-0.1.0.dar"),
+  join(ROOT, "daml/packages/meridian-receivable/.daml/dist/com-meridian-receivable-v6-0.1.0.dar"),
   join(ROOT, "daml/packages/meridian-cash/.daml/dist/com-meridian-cash-0.1.0.dar"),
 ];
 
@@ -27,6 +27,8 @@ const SKIP_DAR_PATTERNS = [
   /com-meridian-receivable-0\.[12]\.0\.dar$/,
   /com-meridian-receivable-v2-/,
   /com-meridian-receivable-v3-/,
+  /com-meridian-receivable-v4-/,
+  /com-meridian-receivable-v5-/,
 ];
 
 function collectDars(): string[] {

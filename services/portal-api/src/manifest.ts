@@ -10,6 +10,8 @@ export interface PortalParties {
   buyer: DevNetPersonaEntry;
   financierA: DevNetPersonaEntry;
   financierB: DevNetPersonaEntry;
+  platformOperator: DevNetPersonaEntry;
+  regulator: DevNetPersonaEntry;
 }
 
 export function loadPortalParties(manifestPath: string): PortalParties {
@@ -21,10 +23,12 @@ export function loadPortalParties(manifestPath: string): PortalParties {
   const buyer = manifest.personas.find((p) => p.orgId === "meridian-buyer");
   const financierA = manifest.personas.find((p) => p.orgId === "meridian-financier-a");
   const financierB = manifest.personas.find((p) => p.orgId === "meridian-financier-b");
-  if (!supplier || !buyer || !financierA || !financierB) {
+  const platformOperator = manifest.personas.find((p) => p.orgId === "meridian-platform");
+  const regulator = manifest.personas.find((p) => p.orgId === "meridian-regulator");
+  if (!supplier || !buyer || !financierA || !financierB || !platformOperator || !regulator) {
     throw new Error("required personas missing from manifest");
   }
-  return { supplier, buyer, financierA, financierB };
+  return { supplier, buyer, financierA, financierB, platformOperator, regulator };
 }
 
 export async function proxyGet(url: string): Promise<unknown> {

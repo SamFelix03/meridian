@@ -14,6 +14,8 @@ export interface KybVerifyRequest {
   legalEntityId: string;
   jurisdiction: string;
   requestedRoles: OrgRole[];
+  /** Required when requesting Regulator role. */
+  complianceProfile?: string;
 }
 
 export interface KybVerifyResponse {
@@ -107,7 +109,7 @@ export interface PartiesManifest {
 export interface IndexerConfig {
   orgId: string;
   actingParty: string;
-  role: "Supplier" | "Buyer" | "Financier";
+  role: "Supplier" | "Buyer" | "Financier" | "Regulator" | "PlatformOperator";
   jsonApiUrl: string;
   /** Auth loaded from env via devnet-auth when omitted. */
   ledgerHost?: string;
@@ -230,6 +232,42 @@ export interface BidSummary {
   mode: BidPricingMode;
   redstoneTimestampMs: number;
   ledgerTime: string;
+  viaAgent?: boolean;
+  mandateId?: string | null;
+}
+
+/** On-ledger bidding mandate for agent-constrained bids. */
+export interface BiddingMandateSummary {
+  contractId: string;
+  mandateId: string;
+  financier: string;
+  maxExposure: string;
+  minSpread: string;
+  eligibleSuppliers: string[];
+  agentEnabled: boolean;
+  revoked: boolean;
+}
+
+/** Agent runtime tick status (off-ledger observability). */
+export interface AgentBidDecision {
+  requestId: string;
+  requestContractId: string;
+  shouldBid: boolean;
+  advanceAmount: string;
+  discountRate: string;
+  rationale: string;
+  submitted: boolean;
+  bidContractId?: string;
+  ledgerError?: string;
+}
+
+export interface AgentRunStatus {
+  lastTickAt: string | null;
+  lastTickDurationMs: number | null;
+  lastError: string | null;
+  adversarialMode: boolean;
+  decisions: AgentBidDecision[];
+  groqModel: string;
 }
 
 /** Cap table entry for syndicated positions (§7.6). */
@@ -312,6 +350,21 @@ export type MeridianNotificationEvent =
   | { type: "round.opened"; requestId: string; contractId: string }
   | { type: "bid.submitted"; requestId: string; bidContractId: string; financier: string }
   | {
+      type: "agent.bid_submitted";
+      requestId: string;
+      bidContractId: string;
+      financier: string;
+      mandateId: string;
+    }
+  | {
+      type: "agent.bid_rejected";
+      requestId: string;
+      financier: string;
+      mandateId: string;
+      reason: string;
+    }
+  | { type: "mandate.created"; mandateId: string; contractId: string; financier: string }
+  | {
       type: "round.awarded";
       requestId: string;
       contractId: string;
@@ -333,7 +386,69 @@ export type MeridianNotificationEvent =
       contractId: string;
       winningBidCid: string;
     }
-  | { type: "syndication.waterfall_distributed"; receivableId: string; contractId: string };
+  | { type: "syndication.waterfall_distributed"; receivableId: string; contractId: string }
+  | {
+      type: "settlement.recorded";
+      recordId: string;
+      receivableId: string;
+      requestId: string;
+      finality: SettlementFinality;
+    }
+  | {
+      type: "regulator.grant_created";
+      grantId: string;
+      contractId: string;
+      jurisdiction: string;
+    };
+
+export type SettlementFinality = "Atomic" | "ReassignmentMediated" | "EscrowFallback";
+
+export interface SettlementFinalitySummary {
+  atomic: number;
+  reassignmentMediated: number;
+  escrowFallback: number;
+  total: number;
+}
+
+export interface SettlementAuditSummary {
+  contractId: string;
+  recordId: string;
+  receivableId: string;
+  requestId: string;
+  finality: SettlementFinality;
+  settledAt: string;
+}
+
+export interface RegulatorExposureRow {
+  contractId: string;
+  receivableId: string;
+  jurisdiction: string | null;
+  aggregateExposure: string;
+}
+
+export interface RegulatorExposureRollup {
+  jurisdiction: string;
+  totalExposure: string;
+  receivableCount: number;
+}
+
+export interface RegulatorJurisdictionGrantSummary {
+  contractId: string;
+  grantId: string;
+  regulator: string;
+  jurisdiction: string;
+  active: boolean;
+}
+
+export interface OracleHealthStatus {
+  ok: boolean;
+  service: string;
+  isFresh: boolean;
+  cached: boolean;
+  lastError: string | null;
+  fault: string | null;
+  referenceRate?: { feedId: string; value: number; ageMs: number } | null;
+}
 
 export interface InterfaceProjection {
   contractId: string;

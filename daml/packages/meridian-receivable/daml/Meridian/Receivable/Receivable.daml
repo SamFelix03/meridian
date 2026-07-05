@@ -34,9 +34,11 @@ template Receivable
     fundedPricingHidden : Bool
     bidHistory : [Text]
     repaymentProofCid : Optional (ContractId RepaymentProof)
+    platformOperator : Party
+    complianceObservers : [Party]
   where
     signatory supplier, buyer
-    observer payeeOfRecord.payee
+    observer payeeOfRecord.payee, platformOperator :: complianceObservers
 
     ensure
       faceValue >= 0.0 && assignmentConsentGranted
@@ -89,7 +91,20 @@ template Receivable
         RegulatorViewData with
           receivableId
           jurisdiction
-          aggregateExposure = faceValue
+          aggregateExposure = regulatorAggregateExposure state faceValue
+
+    choice GrantComplianceObserver : ContractId Receivable
+      with
+        observerParty : Party
+        expectedJurisdiction : Text
+      controller platformOperator
+      do
+        assertMsg "Receivable must have jurisdiction set" (isSome jurisdiction)
+        assertMsg "Jurisdiction mismatch for compliance observer grant"
+          (jurisdiction == Some expectedJurisdiction)
+        assertMsg "Compliance observer already granted"
+          (not (observerParty `elem` complianceObservers))
+        create this with complianceObservers = observerParty :: complianceObservers
 
     choice PostForBid : ContractId Receivable
       controller supplier

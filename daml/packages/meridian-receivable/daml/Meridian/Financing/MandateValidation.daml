@@ -1,0 +1,21 @@
+module Meridian.Financing.MandateValidation where
+
+import DA.Action (when)
+import Meridian.Financing.BiddingMandate
+
+validateMandateConstraints :
+  ContractId BiddingMandate
+  -> Party
+  -> Party
+  -> Decimal
+  -> Decimal
+  -> Update ()
+validateMandateConstraints mandateCid financier supplier advanceAmount discountRate = do
+  mandate <- fetch mandateCid
+  assertMsg "Mandate is revoked" (not mandate.revoked)
+  assertMsg "Agent bidding disabled on mandate" mandate.agentEnabled
+  assertMsg "Mandate financier mismatch" (mandate.financier == financier)
+  assertMsg "Advance exceeds mandate max exposure" (advanceAmount <= mandate.maxExposure)
+  assertMsg "Discount rate below mandate min spread" (discountRate >= mandate.minSpread)
+  when (not (Prelude.null mandate.eligibleSuppliers)) $
+    assertMsg "Supplier not eligible under mandate" (supplier `elem` mandate.eligibleSuppliers)

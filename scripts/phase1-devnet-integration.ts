@@ -55,6 +55,7 @@ async function main(): Promise<void> {
   const buyer = party(manifest, "meridian-buyer");
   const financierA = party(manifest, "meridian-financier-a");
   const financierB = party(manifest, "meridian-financier-b");
+  const platformOperator = party(manifest, "meridian-platform");
 
   const auth = new DevNetAuthClient(loadDevNetConfigFromEnv());
   const client = await auth.createAuthenticatedLedgerClient();
@@ -87,7 +88,13 @@ async function main(): Promise<void> {
   console.log("2. Buyer co-signing...");
   const issueResult = await client.submitAndWaitForTransaction({
     actAs: [buyer],
-    commands: [buildCoSignAndIssueCommand(proposalCid)],
+    commands: [
+      buildCoSignAndIssueCommand({
+        proposalContractId: proposalCid,
+        jurisdiction: "US",
+        platformOperator,
+      }),
+    ],
   });
   const receivableCid = extractCreatedContractId(issueResult);
   assert.ok(receivableCid, "receivable contract id missing");

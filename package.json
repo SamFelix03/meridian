@@ -27,6 +27,10 @@
     "test:phase3:stack": "tsx scripts/phase3-stack-e2e.ts",
     "test:phase4:devnet": "tsx scripts/phase4-devnet-integration.ts",
     "test:phase4:stack": "tsx scripts/phase4-stack-e2e.ts",
+    "test:phase6:devnet": "tsx scripts/phase6-devnet-integration.ts",
+    "test:phase6:stack": "tsx scripts/phase6-stack-e2e.ts",
+    "test:phase7:devnet": "tsx scripts/phase7-devnet-integration.ts",
+    "test:phase7:stack": "tsx scripts/phase7-stack-e2e.ts",
     "bootstrap:cash:devnet": "tsx scripts/bootstrap-meridian-cash-devnet.ts",
     "redstone:fetch": "tsx scripts/fetch-redstone-data.ts --save",
     "sync:redstone-fixtures": "tsx scripts/sync-redstone-fixtures.ts",
@@ -37,9 +41,14 @@
     "indexer:buyer": "pnpm --filter @meridian/indexer serve:buyer",
     "indexer:financier-a": "pnpm --filter @meridian/indexer serve:financier-a",
     "indexer:financier-b": "pnpm --filter @meridian/indexer serve:financier-b",
+    "indexer:regulator": "pnpm --filter @meridian/indexer serve:regulator",
+    "indexer:platform": "pnpm --filter @meridian/indexer serve:platform",
     "notifications": "pnpm --filter @meridian/notifications start",
     "oracle-relay": "pnpm --filter @meridian/oracle-relay start",
-    "registry-api": "pnpm --filter @meridian/registry-api start"
+    "agent-runtime": "pnpm --filter @meridian/agent-runtime start",
+    "registry-api": "pnpm --filter @meridian/registry-api start",
+    "kyb-gateway": "pnpm --filter @meridian/kyb-gateway start",
+    "party-provisioner": "pnpm --filter @meridian/party-provisioner start"
   },
   "devDependencies": {
     "@canton-network/wallet-sdk": "1.3.1",

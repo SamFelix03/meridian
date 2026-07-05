@@ -4,12 +4,17 @@ import DA.Time
 import DA.Map as M
 import DA.Action (when)
 import DA.Foldable (forA_)
+import DA.Optional
 import Splice.Api.Token.MetadataV1
 import Splice.Api.Token.AllocationV1 qualified as AllocationV1
 import Meridian.Financing.Types
 import Meridian.Financing.Bid
+import Meridian.Financing.BiddingMandate
+import Meridian.Financing.MandateValidation
 import Meridian.Receivable.Receivable
 import Meridian.Receivable.Types
+import Meridian.Settlement.Types
+import Meridian.Settlement.SettlementAuditRecord
 
 -- | Supplier-initiated sealed-bid financing round (§8.2).
 template FinancingRequest
@@ -42,12 +47,23 @@ template FinancingRequest
         redstoneTimestampMs : Int
         mode : BidPricingMode
         ledgerTime : Time
+        viaAgent : Bool
+        mandateCid : Optional (ContractId BiddingMandate)
       controller financier
       do
         assertRoundOpen roundState
         assertBeforeDeadline deadline
         assertMsg "Financier not invited" (financier `elem` invitedFinanciers)
         assertMsg "Financier already has active bid" (not (M.member financier activeBids))
+        mandateIdText <- case viaAgent of
+          True -> do
+            cid <- case mandateCid of
+              None -> abort "Agent bid requires mandate reference"
+              Some c -> pure c
+            validateMandateConstraints cid financier supplier advanceAmount discountRate
+            mandate <- fetch cid
+            pure (Some mandate.mandateId)
+          False -> pure None
         bidCid <- createBid
           requestId
           financier
@@ -61,6 +77,8 @@ template FinancingRequest
           pricingBandMin
           pricingBandMax
           ledgerTime
+          viaAgent
+          mandateIdText
         newReqCid <- create this with activeBids = M.insert financier bidCid activeBids
         pure (newReqCid, bidCid)
 
@@ -73,6 +91,8 @@ template FinancingRequest
         redstoneTimestampMs : Int
         mode : BidPricingMode
         ledgerTime : Time
+        viaAgent : Bool
+        mandateCid : Optional (ContractId BiddingMandate)
       controller financier
       do
         assertRoundOpen roundState
@@ -82,6 +102,15 @@ template FinancingRequest
           None -> abort "No prior bid to replace"
           Some cid -> pure cid
         exercise priorBidCid SupplierClose
+        mandateIdText <- case viaAgent of
+          True -> do
+            cid <- case mandateCid of
+              None -> abort "Agent bid requires mandate reference"
+              Some c -> pure c
+            validateMandateConstraints cid financier supplier advanceAmount discountRate
+            mandate <- fetch cid
+            pure (Some mandate.mandateId)
+          False -> pure None
         bidCid <- createBid
           requestId
           financier
@@ -95,6 +124,8 @@ template FinancingRequest
           pricingBandMin
           pricingBandMax
           ledgerTime
+          viaAgent
+          mandateIdText
         newReqCid <- create this with activeBids = M.insert financier bidCid activeBids
         pure (newReqCid, bidCid)
 
@@ -119,6 +150,7 @@ template FinancingRequest
         settlementAllocationCid : ContractId AllocationV1.Allocation
         expectedAdvance : Decimal
         settlementFinancier : Party
+        settlementFinality : SettlementFinality
       controller supplier, settlementFinancier
       do
         assertRoundOpen roundState
@@ -137,7 +169,7 @@ template FinancingRequest
           (av.allocation.transferLeg.sender == settlementFinancier)
         _ <- exercise settlementAllocationCid AllocationV1.Allocation_ExecuteTransfer with
           extraArgs = ExtraArgs with meta = emptyMetadata; context = emptyChoiceContext
-        _ <- fetch receivableCid
+        receivable <- fetch receivableCid
         let historyEntry =
               show winningBid.financier <> ":" <> show winningBid.discountRate <> ":" <> winningBid.reportId
         fundedCid <- exercise receivableCid ApplyFunding with
@@ -145,6 +177,16 @@ template FinancingRequest
           historyEntry
         exercise winningBidCid SupplierClose
         forA_ (map snd (M.toList activeBids)) (\cid -> when (cid /= winningBidCid) (exercise cid SupplierClose))
+        now <- getTime
+        _ <- create SettlementAuditRecord with
+          recordId = requestId <> "-settle"
+          receivableId = receivable.receivableId
+          requestId
+          finality = settlementFinality
+          settledAt = now
+          supplier
+          financier = settlementFinancier
+          platformOperator = receivable.platformOperator
         _ <- create this with
           roundState = Awarded
           activeBids = M.empty

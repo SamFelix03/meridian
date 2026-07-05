@@ -8,7 +8,7 @@ describe("event-parser", () => {
       {
         CreatedEvent: {
           contractId: "cid-1",
-          templateId: "#com-meridian-receivable-v4:Meridian.Receivable.Receivable:Receivable",
+          templateId: "#com-meridian-receivable-v6:Meridian.Receivable.Receivable:Receivable",
           createArgument: { receivableId: "INV-1" },
         },
       },
@@ -23,7 +23,7 @@ describe("event-parser", () => {
       {
         CreatedEvent: {
           contractId: "cid-2",
-          templateId: "#com-meridian-receivable-v4:Meridian.Receivable.ReceivableProposal:ReceivableProposal",
+          templateId: "#com-meridian-receivable-v6:Meridian.Receivable.ReceivableProposal:ReceivableProposal",
           createArgument: { proposalId: "PROP-1" },
         },
       },
@@ -38,7 +38,7 @@ describe("event-parser", () => {
         CreatedEvent: {
           contractId: "req-1",
           templateId:
-            "#com-meridian-receivable-v4:Meridian.Financing.FinancingRequest:FinancingRequest",
+            "#com-meridian-receivable-v6:Meridian.Financing.FinancingRequest:FinancingRequest",
           createArgument: {
             requestId: "ROUND-1",
             roundState: "RoundOpen",
@@ -58,7 +58,7 @@ describe("event-parser", () => {
       {
         CreatedEvent: {
           contractId: "bid-1",
-          templateId: "#com-meridian-receivable-v4:Meridian.Financing.Bid:Bid",
+          templateId: "#com-meridian-receivable-v6:Meridian.Financing.Bid:Bid",
           createArgument: {
             requestId: "ROUND-1",
             financier: "fin-a::abc",

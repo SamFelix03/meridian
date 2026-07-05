@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { mkdirSync, rmSync, existsSync } from "node:fs";
 import { dirname } from "node:path";
 import type { RawLedgerEvent, IndexerCheckpoint } from "@meridian/shared-types";
-import { JsonLedgerClient, hashEvents } from "@meridian/ledger-client";
+import { JsonLedgerClient, LedgerClientError, hashEvents } from "@meridian/ledger-client";
 import { ProjectionStore } from "./projection-store.js";
 import {
   extractArchivedContractIds,
@@ -24,6 +24,19 @@ import {
   projectBid,
   projectFinancingRequest,
 } from "./financing-projector.js";
+import {
+  isBiddingMandateTemplate,
+  projectBiddingMandate,
+} from "./mandate-projector.js";
+import { projectRegulatorView } from "./regulator-projector.js";
+import {
+  isSettlementAuditRecordTemplate,
+  projectSettlementAuditRecord,
+} from "./settlement-projector.js";
+import {
+  isRegulatorJurisdictionGrantTemplate,
+  projectRegulatorJurisdictionGrant,
+} from "./compliance-projector.js";
 import {
   isParticipationInterestTemplate,
   isSyndicationBidTemplate,
@@ -131,7 +144,7 @@ export class ReplayIndexer {
     private config: {
       orgId: string;
       actingParty: string;
-      role: "Supplier" | "Buyer" | "Financier";
+      role: "Supplier" | "Buyer" | "Financier" | "Regulator" | "PlatformOperator";
       jsonApiUrl: string;
       dataDir: string;
       rebuild: boolean;
@@ -147,6 +160,23 @@ export class ReplayIndexer {
     });
   }
 
+  /** DevNet JSON API caps ACS responses at 200 contracts per party. */
+  private async safeGetActiveContracts(): Promise<
+    Awaited<ReturnType<JsonLedgerClient["getActiveContracts"]>>
+  > {
+    try {
+      return await this.client.getActiveContracts(this.config.actingParty);
+    } catch (err) {
+      if (err instanceof LedgerClientError && err.code === "GET_ACS_FAILED") {
+        console.warn(
+          `ACS fetch skipped for ${this.config.orgId}: party exceeds ledger API list limit`
+        );
+        return [];
+      }
+      throw err;
+    }
+  }
+
   async runOnce(): Promise<IndexerCheckpoint> {
     const existing = this.store.getCheckpoint();
     const beginExclusive =
@@ -156,7 +186,7 @@ export class ReplayIndexer {
 
     // Bootstrap ACS on first run
     if (!existing) {
-      const contracts = await this.client.getActiveContracts(this.config.actingParty);
+      const contracts = await this.safeGetActiveContracts();
       for (const c of contracts) {
         this.store.appendEvent({
           offset: "0",
@@ -198,7 +228,7 @@ export class ReplayIndexer {
 
   /** Backfill projections from ACS when the update stream skips visible contracts. */
   private async reconcileActiveContracts(): Promise<void> {
-    const contracts = await this.client.getActiveContracts(this.config.actingParty);
+    const contracts = await this.safeGetActiveContracts();
     for (const c of contracts) {
       this.projectContractCreate(
         c.templateId,
@@ -251,6 +281,10 @@ export class ReplayIndexer {
     this.store.projections.archiveSyndicationOfferings(archived);
     this.store.projections.archiveSyndicationBids(archived);
     this.store.projections.archiveParticipationInterests(archived);
+    this.store.projections.archiveMandates(archived);
+    this.store.projections.archiveRegulatorExposure(archived);
+    this.store.projections.archiveSettlementAudits(archived);
+    this.store.projections.archiveRegulatorGrants(archived);
   }
 
   private projectContractCreate(
@@ -299,6 +333,18 @@ export class ReplayIndexer {
           });
         }
       }
+      if (this.config.role === "Regulator") {
+        const view = projectRegulatorView(contractId, payload);
+        this.store.projections.upsertRegulatorExposure(view, offset);
+        this.store.projections.upsertProjection({
+          contractId,
+          interfaceName: "IRegulatorView",
+          party,
+          viewJson: view,
+          offset,
+          archived: false,
+        });
+      }
     }
 
     if (isReceivableProposalTemplate(templateId)) {
@@ -339,6 +385,24 @@ export class ReplayIndexer {
     if (isParticipationInterestTemplate(templateId) && this.config.role === "Financier") {
       const interest = projectParticipationInterest(contractId, payload);
       this.store.projections.upsertParticipationInterest(interest, offset);
+    }
+
+    if (isBiddingMandateTemplate(templateId) && this.config.role === "Financier") {
+      const mandate = projectBiddingMandate(contractId, payload);
+      this.store.projections.upsertBiddingMandate(mandate, offset);
+    }
+
+    if (isSettlementAuditRecordTemplate(templateId) && this.config.role === "PlatformOperator") {
+      const audit = projectSettlementAuditRecord(contractId, payload);
+      this.store.projections.upsertSettlementAudit(audit, offset);
+    }
+
+    if (
+      isRegulatorJurisdictionGrantTemplate(templateId) &&
+      this.config.role === "PlatformOperator"
+    ) {
+      const grant = projectRegulatorJurisdictionGrant(contractId, payload);
+      this.store.projections.upsertRegulatorGrant(grant, offset);
     }
   }
 

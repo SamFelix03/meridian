@@ -9,7 +9,7 @@ dependencies:
 data-dependencies:
   - ../packages/meridian-core/.daml/dist/com-meridian-core-0.2.0.dar
   - ../packages/meridian-cash/.daml/dist/com-meridian-cash-0.1.0.dar
-  - ../packages/meridian-receivable/.daml/dist/com-meridian-receivable-v4-0.1.0.dar
+  - ../packages/meridian-receivable/.daml/dist/com-meridian-receivable-v6-0.1.0.dar
   - ../vendor/redstone/dist/redstone-sdk-v19-0.4.0.dar
   - ../vendor/redstone/dist/redstone-common-v19-0.4.0.dar
   - ../vendor/splice/dist/splice-api-token-metadata-v1-1.0.0.dar

@@ -1,6 +1,7 @@
 module Meridian.Financing.Bid where
 
 import DA.Time
+import DA.Optional
 import Meridian.Financing.Types
 import Meridian.Financing.OracleValidation
 
@@ -20,6 +21,8 @@ template Bid
     pricingBandMin : Decimal
     pricingBandMax : Decimal
     ledgerTime : Time
+    viaAgent : Bool
+    mandateId : Optional Text
   where
     signatory financier
     observer supplier
@@ -47,8 +50,10 @@ createBid :
   -> Decimal
   -> Decimal
   -> Time
+  -> Bool
+  -> Optional Text
   -> Update (ContractId Bid)
-createBid requestId financier supplier advanceAmount discountRate payload timestampMs mode feedId bandMin bandMax ledgerTime = do
+createBid requestId financier supplier advanceAmount discountRate payload timestampMs mode feedId bandMin bandMax ledgerTime viaAgent mandateId = do
   case mode of
     OracleAnchored ->
       validateOracleAnchoredBid feedId payload ledgerTime bandMin bandMax discountRate
@@ -68,3 +73,5 @@ createBid requestId financier supplier advanceAmount discountRate payload timest
     pricingBandMin = bandMin
     pricingBandMax = bandMax
     ledgerTime
+    viaAgent
+    mandateId

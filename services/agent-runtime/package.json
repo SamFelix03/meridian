@@ -1,0 +1,24 @@
+{
+  "name": "@meridian/agent-runtime",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "bin": {
+    "meridian-agent-runtime": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/cli.js",
+    "test": "node -e \"process.exit(0)\""
+  },
+  "dependencies": {
+    "@meridian/devnet-auth": "workspace:*",
+    "@meridian/ledger-client": "workspace:*",
+    "@meridian/shared-types": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "typescript": "^5.5.0"
+  }
+}

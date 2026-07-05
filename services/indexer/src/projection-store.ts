@@ -2,6 +2,7 @@ import Database from "better-sqlite3";
 import type {
   BidComparisonRow,
   BidSummary,
+  BiddingMandateSummary,
   BuyerReceivableView,
   ConsentPolicySummary,
   FinancingRequestSummary,
@@ -9,7 +10,12 @@ import type {
   LeadCapTableView,
   ParticipationInterestSummary,
   ReceivableProposalSummary,
+  RegulatorExposureRow,
+  RegulatorExposureRollup,
+  RegulatorJurisdictionGrantSummary,
   RoundState,
+  SettlementAuditSummary,
+  SettlementFinalitySummary,
   SupplierReceivableView,
   SyndicationBidSummary,
   SyndicationOfferingSummary,
@@ -82,6 +88,36 @@ export class ProjectionStore {
         contract_id TEXT PRIMARY KEY,
         receivable_id TEXT NOT NULL,
         interest_json TEXT NOT NULL,
+        offset TEXT NOT NULL,
+        archived INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS bidding_mandates (
+        contract_id TEXT PRIMARY KEY,
+        mandate_id TEXT NOT NULL,
+        mandate_json TEXT NOT NULL,
+        offset TEXT NOT NULL,
+        archived INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE INDEX IF NOT EXISTS idx_bidding_mandates_mandate_id ON bidding_mandates(mandate_id);
+      CREATE TABLE IF NOT EXISTS regulator_exposure (
+        contract_id TEXT PRIMARY KEY,
+        receivable_id TEXT NOT NULL,
+        jurisdiction TEXT,
+        exposure_json TEXT NOT NULL,
+        offset TEXT NOT NULL,
+        archived INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS settlement_audits (
+        contract_id TEXT PRIMARY KEY,
+        record_id TEXT NOT NULL,
+        audit_json TEXT NOT NULL,
+        offset TEXT NOT NULL,
+        archived INTEGER NOT NULL DEFAULT 0
+      );
+      CREATE TABLE IF NOT EXISTS regulator_grants (
+        contract_id TEXT PRIMARY KEY,
+        grant_id TEXT NOT NULL,
+        grant_json TEXT NOT NULL,
         offset TEXT NOT NULL,
         archived INTEGER NOT NULL DEFAULT 0
       );
@@ -480,5 +516,173 @@ export class ProjectionStore {
       })),
       syndicationState: "PartiallySyndicated",
     };
+  }
+
+  upsertBiddingMandate(mandate: BiddingMandateSummary, offset: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO bidding_mandates (contract_id, mandate_id, mandate_json, offset, archived)
+         VALUES (?, ?, ?, ?, 0)
+         ON CONFLICT(contract_id) DO UPDATE SET
+           mandate_id = excluded.mandate_id,
+           mandate_json = excluded.mandate_json,
+           offset = excluded.offset,
+           archived = 0`
+      )
+      .run(mandate.contractId, mandate.mandateId, JSON.stringify(mandate), offset);
+  }
+
+  archiveMandates(contractIds: string[]): void {
+    if (contractIds.length === 0) return;
+    const stmt = this.db.prepare(
+      `UPDATE bidding_mandates SET archived = 1 WHERE contract_id = ?`
+    );
+    for (const id of contractIds) stmt.run(id);
+  }
+
+  getFinancierMandates(actingParty: string): BiddingMandateSummary[] {
+    const rows = this.db
+      .prepare(`SELECT mandate_json FROM bidding_mandates WHERE archived = 0`)
+      .all() as Array<{ mandate_json: string }>;
+    return rows
+      .map((r) => JSON.parse(r.mandate_json) as BiddingMandateSummary)
+      .filter((m) => m.financier === actingParty);
+  }
+
+  upsertRegulatorExposure(row: RegulatorExposureRow, offset: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO regulator_exposure (contract_id, receivable_id, jurisdiction, exposure_json, offset, archived)
+         VALUES (?, ?, ?, ?, ?, 0)
+         ON CONFLICT(contract_id) DO UPDATE SET
+           receivable_id = excluded.receivable_id,
+           jurisdiction = excluded.jurisdiction,
+           exposure_json = excluded.exposure_json,
+           offset = excluded.offset,
+           archived = 0`
+      )
+      .run(
+        row.contractId,
+        row.receivableId,
+        row.jurisdiction,
+        JSON.stringify(row),
+        offset
+      );
+  }
+
+  archiveRegulatorExposure(contractIds: string[]): void {
+    if (contractIds.length === 0) return;
+    const stmt = this.db.prepare(
+      `UPDATE regulator_exposure SET archived = 1 WHERE contract_id = ?`
+    );
+    for (const id of contractIds) stmt.run(id);
+  }
+
+  getRegulatorExposureRows(jurisdiction?: string): RegulatorExposureRow[] {
+    const rows = this.db
+      .prepare(`SELECT exposure_json FROM regulator_exposure WHERE archived = 0`)
+      .all() as Array<{ exposure_json: string }>;
+    const parsed = rows.map((r) => JSON.parse(r.exposure_json) as RegulatorExposureRow);
+    if (!jurisdiction) return parsed;
+    return parsed.filter((r) => r.jurisdiction === jurisdiction);
+  }
+
+  getRegulatorExposureRollups(jurisdiction?: string): RegulatorExposureRollup[] {
+    const rows = this.getRegulatorExposureRows(jurisdiction);
+    const byJurisdiction = new Map<string, { total: number; count: number }>();
+    for (const row of rows) {
+      const key = row.jurisdiction ?? "UNKNOWN";
+      const current = byJurisdiction.get(key) ?? { total: 0, count: 0 };
+      current.total += Number(row.aggregateExposure);
+      current.count += 1;
+      byJurisdiction.set(key, current);
+    }
+    return [...byJurisdiction.entries()].map(([j, stats]) => ({
+      jurisdiction: j,
+      totalExposure: String(stats.total),
+      receivableCount: stats.count,
+    }));
+  }
+
+  upsertSettlementAudit(audit: SettlementAuditSummary, offset: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO settlement_audits (contract_id, record_id, audit_json, offset, archived)
+         VALUES (?, ?, ?, ?, 0)
+         ON CONFLICT(contract_id) DO UPDATE SET
+           record_id = excluded.record_id,
+           audit_json = excluded.audit_json,
+           offset = excluded.offset,
+           archived = 0`
+      )
+      .run(audit.contractId, audit.recordId, JSON.stringify(audit), offset);
+  }
+
+  archiveSettlementAudits(contractIds: string[]): void {
+    if (contractIds.length === 0) return;
+    const stmt = this.db.prepare(
+      `UPDATE settlement_audits SET archived = 1 WHERE contract_id = ?`
+    );
+    for (const id of contractIds) stmt.run(id);
+  }
+
+  getSettlementFinalitySummary(): SettlementFinalitySummary {
+    const rows = this.db
+      .prepare(`SELECT audit_json FROM settlement_audits WHERE archived = 0`)
+      .all() as Array<{ audit_json: string }>;
+    const summary: SettlementFinalitySummary = {
+      atomic: 0,
+      reassignmentMediated: 0,
+      escrowFallback: 0,
+      total: 0,
+    };
+    for (const row of rows) {
+      const audit = JSON.parse(row.audit_json) as SettlementAuditSummary;
+      summary.total += 1;
+      if (audit.finality === "ReassignmentMediated") {
+        summary.reassignmentMediated += 1;
+      } else if (audit.finality === "EscrowFallback") {
+        summary.escrowFallback += 1;
+      } else {
+        summary.atomic += 1;
+      }
+    }
+    return summary;
+  }
+
+  getSettlementAudits(): SettlementAuditSummary[] {
+    const rows = this.db
+      .prepare(`SELECT audit_json FROM settlement_audits WHERE archived = 0`)
+      .all() as Array<{ audit_json: string }>;
+    return rows.map((r) => JSON.parse(r.audit_json) as SettlementAuditSummary);
+  }
+
+  upsertRegulatorGrant(grant: RegulatorJurisdictionGrantSummary, offset: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO regulator_grants (contract_id, grant_id, grant_json, offset, archived)
+         VALUES (?, ?, ?, ?, 0)
+         ON CONFLICT(contract_id) DO UPDATE SET
+           grant_id = excluded.grant_id,
+           grant_json = excluded.grant_json,
+           offset = excluded.offset,
+           archived = 0`
+      )
+      .run(grant.contractId, grant.grantId, JSON.stringify(grant), offset);
+  }
+
+  archiveRegulatorGrants(contractIds: string[]): void {
+    if (contractIds.length === 0) return;
+    const stmt = this.db.prepare(
+      `UPDATE regulator_grants SET archived = 1 WHERE contract_id = ?`
+    );
+    for (const id of contractIds) stmt.run(id);
+  }
+
+  getRegulatorGrants(): RegulatorJurisdictionGrantSummary[] {
+    const rows = this.db
+      .prepare(`SELECT grant_json FROM regulator_grants WHERE archived = 0`)
+      .all() as Array<{ grant_json: string }>;
+    return rows.map((r) => JSON.parse(r.grant_json) as RegulatorJurisdictionGrantSummary);
   }
 }

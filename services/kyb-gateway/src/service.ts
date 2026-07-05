@@ -2,7 +2,7 @@ import Database from "better-sqlite3";
 import { mkdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { randomUUID } from "node:crypto";
-import type { KybVerifyRequest, KybVerifyResponse } from "@meridian/shared-types";
+import type { KybVerifyRequest, KybVerifyResponse, KybStatus } from "@meridian/shared-types";
 
 export interface AuditRecord {
   id: string;
@@ -15,6 +15,8 @@ export interface AuditRecord {
   reason: string | null;
   createdAt: string;
 }
+
+const AML_BLOCKED = new Set(["SANCTIONED-ENTITY", "BLOCKED-ACME"]);
 
 export class KybAuditStore {
   private db: Database.Database;
@@ -48,6 +50,14 @@ export class KybAuditStore {
       .run(record);
   }
 
+  updateStatus(verificationId: string, status: KybStatus, verifiedAt: string | null, reason: string | null): void {
+    this.db
+      .prepare(
+        `UPDATE kyb_audit SET status = ?, verified_at = ?, reason = ? WHERE verification_id = ?`
+      )
+      .run(status, verifiedAt, reason, verificationId);
+  }
+
   getByVerificationId(verificationId: string): AuditRecord | undefined {
     const row = this.db
       .prepare(`SELECT * FROM kyb_audit WHERE verification_id = ?`)
@@ -71,18 +81,59 @@ export class KybAuditStore {
   }
 }
 
-/** Phase 0 stub: always APPROVED with structured audit. Phase 7 swaps implementation. */
+export type KybDecision = "APPROVED" | "REJECTED";
+
 export class KybGatewayService {
   constructor(private store: KybAuditStore) {}
+
+  private validateRequest(request: KybVerifyRequest): string | null {
+    if (!request.jurisdiction.trim()) {
+      return "jurisdiction is required";
+    }
+    if (request.legalEntityId.startsWith("BLOCKED-")) {
+      return "legal entity blocked by policy";
+    }
+    if (AML_BLOCKED.has(request.legalEntityId)) {
+      return "entity on AML sanctions list";
+    }
+    if (
+      request.requestedRoles.includes("Regulator") &&
+      !request.complianceProfile?.trim()
+    ) {
+      return "Regulator role requires complianceProfile";
+    }
+    return null;
+  }
 
   verify(request: KybVerifyRequest): KybVerifyResponse {
     const verificationId = randomUUID();
     const now = new Date().toISOString();
+    const rejectReason = this.validateRequest(request);
+
+    if (rejectReason) {
+      const response: KybVerifyResponse = {
+        status: "REJECTED",
+        verificationId,
+        verifiedAt: now,
+        reason: rejectReason,
+      };
+      this.store.insert({
+        id: randomUUID(),
+        legalEntityId: request.legalEntityId,
+        jurisdiction: request.jurisdiction,
+        requestedRoles: JSON.stringify(request.requestedRoles),
+        status: response.status,
+        verificationId,
+        verifiedAt: now,
+        reason: rejectReason,
+        createdAt: now,
+      });
+      return response;
+    }
 
     const response: KybVerifyResponse = {
-      status: "APPROVED",
+      status: "PENDING",
       verificationId,
-      verifiedAt: now,
     };
 
     this.store.insert({
@@ -92,7 +143,7 @@ export class KybGatewayService {
       requestedRoles: JSON.stringify(request.requestedRoles),
       status: response.status,
       verificationId,
-      verifiedAt: now,
+      verifiedAt: null,
       reason: null,
       createdAt: now,
     });
@@ -100,9 +151,52 @@ export class KybGatewayService {
     return response;
   }
 
+  complete(verificationId: string, decision: KybDecision, reason?: string): KybVerifyResponse {
+    const record = this.store.getByVerificationId(verificationId);
+    if (!record) {
+      throw new KybGatewayError("NOT_FOUND", `verification ${verificationId} not found`);
+    }
+    if (record.status !== "PENDING") {
+      throw new KybGatewayError(
+        "INVALID_STATE",
+        `verification ${verificationId} is ${record.status}, expected PENDING`
+      );
+    }
+    const now = new Date().toISOString();
+    const status: KybStatus = decision;
+    this.store.updateStatus(verificationId, status, now, reason ?? null);
+    return {
+      status,
+      verificationId,
+      verifiedAt: now,
+      reason: reason ?? undefined,
+    };
+  }
+
+  getStatus(verificationId: string): KybVerifyResponse | null {
+    const record = this.store.getByVerificationId(verificationId);
+    if (!record) return null;
+    return {
+      status: record.status as KybStatus,
+      verificationId: record.verificationId,
+      verifiedAt: record.verifiedAt ?? undefined,
+      reason: record.reason ?? undefined,
+    };
+  }
+
   validateVerificationId(verificationId: string): boolean {
     const record = this.store.getByVerificationId(verificationId);
     return record?.status === "APPROVED";
+  }
+}
+
+export class KybGatewayError extends Error {
+  constructor(
+    public code: string,
+    message: string
+  ) {
+    super(message);
+    this.name = "KybGatewayError";
   }
 }
 

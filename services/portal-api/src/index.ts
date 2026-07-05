@@ -28,6 +28,13 @@ import {
   buildPauseSyndicationRoundCommand,
   buildSyndicationStaticFallbackCommand,
   buildExpireSyndicationRoundCommand,
+  buildCreateBiddingMandateCommand,
+  buildRevokeMandateCommand,
+  buildUpdateMandateCommand,
+  buildSetMandateAgentEnabledCommand,
+  buildGrantComplianceObserverCommand,
+  buildCreateRegulatorJurisdictionGrantCommand,
+  buildRevokeRegulatorJurisdictionGrantCommand,
   extractAllocationCid,
   computeWaterfall,
   buildWaterfallAllocations,
@@ -58,6 +65,12 @@ const FINANCIER_INDEXER = process.env.FINANCIER_INDEXER_URL ?? "http://127.0.0.1
 const FINANCIER_INDEXER_B = process.env.FINANCIER_INDEXER_B_URL ?? "http://127.0.0.1:4014";
 const ORACLE_RELAY = process.env.ORACLE_RELAY_URL ?? "http://127.0.0.1:4021";
 const REGISTRY_API = process.env.REGISTRY_API_URL ?? "http://127.0.0.1:4022";
+const AGENT_RUNTIME = process.env.AGENT_RUNTIME_URL ?? "http://127.0.0.1:4025";
+const REGULATOR_INDEXER = process.env.REGULATOR_INDEXER_URL ?? "http://127.0.0.1:4015";
+const PLATFORM_INDEXER = process.env.PLATFORM_INDEXER_URL ?? "http://127.0.0.1:4016";
+const KYB_GATEWAY = process.env.KYB_GATEWAY_URL ?? "http://127.0.0.1:8090";
+const PARTY_PROVISIONER = process.env.PARTY_PROVISIONER_URL ?? "http://127.0.0.1:8091";
+const KYB_COMPLETE_SECRET = process.env.KYB_COMPLETE_SECRET ?? "dev-kyb-secret";
 
 async function readBody(req: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
@@ -70,7 +83,7 @@ function json(res: ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, {
     "Content-Type": "application/json",
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+    "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
     "Access-Control-Allow-Headers": "Content-Type",
   });
   res.end(JSON.stringify(body));
@@ -211,7 +224,7 @@ async function handleRequest(
   if (req.method === "OPTIONS") {
     res.writeHead(204, {
       "Access-Control-Allow-Origin": "*",
-      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Methods": "GET, POST, PATCH, OPTIONS",
       "Access-Control-Allow-Headers": "Content-Type",
     });
     res.end();
@@ -283,6 +296,29 @@ async function handleRequest(
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/financier/mandates") {
+      const data = await proxyGet(`${FINANCIER_INDEXER}/financier/mandates`);
+      json(res, 200, data);
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/financier/agent/status") {
+      const agentRes = await fetch(`${AGENT_RUNTIME}/status`);
+      if (!agentRes.ok) {
+        json(res, 502, { error: await agentRes.text() });
+        return;
+      }
+      json(res, 200, await agentRes.json());
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/financier/agent/tick") {
+      const agentRes = await fetch(`${AGENT_RUNTIME}/tick`, { method: "POST" });
+      const payload = await agentRes.json();
+      json(res, agentRes.ok ? 200 : 500, payload);
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/financier/syndication/offerings") {
       const data = await proxyGet(`${FINANCIER_INDEXER}/financier/syndication/offerings`);
       json(res, 200, data);
@@ -324,17 +360,250 @@ async function handleRequest(
       return;
     }
 
+    if (req.method === "GET" && url.pathname === "/regulator/exposure") {
+      const jurisdiction = url.searchParams.get("jurisdiction");
+      const path = jurisdiction
+        ? `/regulator/exposure?jurisdiction=${encodeURIComponent(jurisdiction)}`
+        : "/regulator/exposure";
+      const data = await proxyGet(`${REGULATOR_INDEXER}${path}`);
+      json(res, 200, data);
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/ops/settlement-finality") {
+      const data = await proxyGet(`${PLATFORM_INDEXER}/ops/settlement-finality`);
+      json(res, 200, data);
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/ops/regulator-grants") {
+      const data = await proxyGet(`${PLATFORM_INDEXER}/ops/regulator-grants`);
+      json(res, 200, data);
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/ops/oracle-health") {
+      const [health, feeds] = await Promise.all([
+        fetch(`${ORACLE_RELAY}/health`).then((r) => r.json()),
+        fetch(`${ORACLE_RELAY}/feeds/latest`)
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+      ]);
+      const feedBody = feeds as FetchResult | null;
+      json(res, 200, {
+        ok: Boolean((health as { ok?: boolean }).ok),
+        service: "oracle-relay",
+        isFresh: Boolean(feedBody?.isFresh),
+        cached: feedBody != null,
+        lastError: (health as { lastError?: string | null }).lastError ?? null,
+        fault: (health as { fault?: string | null }).fault ?? null,
+        referenceRate: feedBody?.referenceRate
+          ? {
+              feedId: feedBody.referenceRate.feedId,
+              value: feedBody.referenceRate.value,
+              ageMs: feedBody.ageMs,
+            }
+          : null,
+      });
+      return;
+    }
+
     if (req.method === "GET" && url.pathname === "/parties") {
       json(res, 200, {
         supplier: parties.supplier.partyId,
         buyer: parties.buyer.partyId,
         financierA: parties.financierA.partyId,
         financierB: parties.financierB.partyId,
+        platformOperator: parties.platformOperator.partyId,
+        regulator: parties.regulator.partyId,
       });
       return;
     }
 
     const client = await auth.createAuthenticatedLedgerClient();
+
+    if (req.method === "POST" && url.pathname === "/kyb/verify") {
+      const body = await readBody(req);
+      const kybRes = await fetch(`${KYB_GATEWAY}/v1/kyb/verify`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const text = await kybRes.text();
+      json(res, kybRes.status, JSON.parse(text));
+      return;
+    }
+
+    const kybCompleteMatch = url.pathname.match(/^\/kyb\/verify\/([^/]+)\/complete$/);
+    if (req.method === "POST" && kybCompleteMatch) {
+      const verificationId = decodeURIComponent(kybCompleteMatch[1] ?? "");
+      const body = await readBody(req);
+      const kybRes = await fetch(
+        `${KYB_GATEWAY}/v1/kyb/verify/${encodeURIComponent(verificationId)}/complete`,
+        {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${KYB_COMPLETE_SECRET}`,
+          },
+          body: JSON.stringify(body),
+        }
+      );
+      const text = await kybRes.text();
+      json(res, kybRes.status, JSON.parse(text));
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/parties/allocate") {
+      const body = await readBody(req);
+      const provRes = await fetch(`${PARTY_PROVISIONER}/v1/parties/allocate`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const text = await provRes.text();
+      json(res, provRes.status, JSON.parse(text));
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/ops/regulator-grants") {
+      const body = (await readBody(req)) as {
+        grantId?: string;
+        jurisdiction?: string;
+      };
+      const cmd = buildCreateRegulatorJurisdictionGrantCommand({
+        grantId: body.grantId ?? `GRANT-${Date.now()}`,
+        platformOperator: parties.platformOperator.partyId,
+        regulator: parties.regulator.partyId,
+        jurisdiction: body.jurisdiction ?? "US",
+      });
+      const result = await client.submitAndWaitForTransaction({
+        actAs: [parties.platformOperator.partyId],
+        commands: [cmd],
+      });
+      json(res, 201, {
+        contractId: extractCreatedContractId(result, "RegulatorJurisdictionGrant"),
+        transaction: result.transaction?.updateId,
+      });
+      return;
+    }
+
+    const revokeGrantMatch = url.pathname.match(/^\/ops\/regulator-grants\/([^/]+)$/);
+    if (req.method === "PATCH" && revokeGrantMatch) {
+      const grantContractId = decodeURIComponent(revokeGrantMatch[1] ?? "");
+      const body = (await readBody(req)) as { action?: string };
+      if (body.action !== "revoke") {
+        json(res, 400, { error: "only action=revoke supported" });
+        return;
+      }
+      const result = await client.submitAndWaitForTransaction({
+        actAs: [parties.platformOperator.partyId],
+        commands: [buildRevokeRegulatorJurisdictionGrantCommand({ grantContractId })],
+      });
+      json(res, 200, {
+        contractId: extractCreatedContractId(result),
+        transaction: result.transaction?.updateId,
+      });
+      return;
+    }
+
+    const grantObserverMatch = url.pathname.match(/^\/ops\/receivables\/([^/]+)\/grant-observer$/);
+    if (req.method === "POST" && grantObserverMatch) {
+      const receivableContractId = decodeURIComponent(grantObserverMatch[1] ?? "");
+      const body = (await readBody(req)) as { jurisdiction?: string };
+      const result = await client.submitAndWaitForTransaction({
+        actAs: [parties.platformOperator.partyId],
+        commands: [
+          buildGrantComplianceObserverCommand({
+            receivableContractId,
+            observerParty: parties.regulator.partyId,
+            expectedJurisdiction: body.jurisdiction ?? "US",
+          }),
+        ],
+      });
+      json(res, 200, {
+        receivableContractId: extractCreatedContractId(result, "Receivable:Receivable"),
+        transaction: result.transaction?.updateId,
+      });
+      return;
+    }
+
+    if (req.method === "POST" && url.pathname === "/financier/mandates") {
+      const body = (await readBody(req)) as {
+        mandateId?: string;
+        maxExposure?: string;
+        minSpread?: string;
+        eligibleSuppliers?: string[];
+        agentEnabled?: boolean;
+      };
+      if (!body.mandateId || !body.maxExposure || body.minSpread == null) {
+        json(res, 400, { error: "mandateId, maxExposure, and minSpread required" });
+        return;
+      }
+      const cmd = buildCreateBiddingMandateCommand({
+        mandateId: body.mandateId,
+        financier: parties.financierA.partyId,
+        maxExposure: body.maxExposure,
+        minSpread: body.minSpread,
+        eligibleSuppliers: body.eligibleSuppliers ?? [],
+        agentEnabled: body.agentEnabled ?? true,
+      });
+      const result = await client.submitAndWaitForTransaction({
+        actAs: [parties.financierA.partyId],
+        commands: [cmd],
+      });
+      json(res, 201, {
+        contractId: extractCreatedContractId(result, "BiddingMandate"),
+        transaction: result.transaction?.updateId,
+      });
+      return;
+    }
+
+    const mandatePatch = url.pathname.match(/^\/financier\/mandates\/([^/]+)$/);
+    if (req.method === "PATCH" && mandatePatch) {
+      const mandateContractId = decodeURIComponent(mandatePatch[1] ?? "");
+      const body = (await readBody(req)) as {
+        action?: "revoke" | "update" | "setAgentEnabled";
+        maxExposure?: string;
+        minSpread?: string;
+        eligibleSuppliers?: string[];
+        agentEnabled?: boolean;
+      };
+      const action = body.action ?? "update";
+      let cmd;
+      if (action === "revoke") {
+        cmd = buildRevokeMandateCommand({ mandateContractId });
+      } else if (action === "setAgentEnabled") {
+        if (body.agentEnabled == null) {
+          json(res, 400, { error: "agentEnabled required for setAgentEnabled" });
+          return;
+        }
+        cmd = buildSetMandateAgentEnabledCommand({
+          mandateContractId,
+          enabled: body.agentEnabled,
+        });
+      } else {
+        if (!body.maxExposure || body.minSpread == null) {
+          json(res, 400, { error: "maxExposure and minSpread required for update" });
+          return;
+        }
+        cmd = buildUpdateMandateCommand({
+          mandateContractId,
+          maxExposure: body.maxExposure,
+          minSpread: body.minSpread,
+          eligibleSuppliers: body.eligibleSuppliers ?? [],
+        });
+      }
+      const result = await client.submitAndWaitForTransaction({
+        actAs: [parties.financierA.partyId],
+        commands: [cmd],
+      });
+      json(res, 200, {
+        contractId: extractCreatedContractId(result, "BiddingMandate") ?? mandateContractId,
+        transaction: result.transaction?.updateId,
+      });
+      return;
+    }
 
     if (req.method === "POST" && url.pathname === "/invoices/propose") {
       const body = (await readBody(req)) as {
@@ -373,7 +642,12 @@ async function handleRequest(
 
     if (req.method === "POST" && url.pathname.startsWith("/invoices/") && url.pathname.endsWith("/cosign")) {
       const contractId = decodeURIComponent(url.pathname.split("/")[2] ?? "");
-      const cmd = buildCoSignAndIssueCommand(contractId);
+      const body = (await readBody(req)) as { jurisdiction?: string | null };
+      const cmd = buildCoSignAndIssueCommand({
+        proposalContractId: contractId,
+        jurisdiction: body.jurisdiction ?? "US",
+        platformOperator: parties.platformOperator.partyId,
+      });
       const result = await client.submitAndWaitForTransaction({
         actAs: [parties.buyer.partyId],
         commands: [cmd],
@@ -745,6 +1019,8 @@ async function handleRequest(
         advanceAmount?: string;
         discountRate?: string;
         useStaticReference?: boolean;
+        viaAgent?: boolean;
+        mandateContractId?: string;
       };
 
       if (!body.advanceAmount || !body.discountRate) {
@@ -755,6 +1031,7 @@ async function handleRequest(
       const oracle = await fetchOracleFeed();
       const mode = body.useStaticReference ? staticReferenceMode() : oracleAnchoredMode();
       const ledgerTime = new Date(oracle.packageTimestampMs).toISOString();
+      const viaAgent = body.viaAgent ?? false;
 
       const cmd = buildSubmitBidCommand({
         requestContractId: bidRequestId,
@@ -765,6 +1042,8 @@ async function handleRequest(
         redstoneTimestampMs: oracle.packageTimestampMs,
         mode,
         ledgerTime,
+        viaAgent,
+        mandateContractId: viaAgent ? body.mandateContractId : null,
       });
 
       const result = await client.submitAndWaitForTransaction({
@@ -786,6 +1065,8 @@ async function handleRequest(
         advanceAmount?: string;
         discountRate?: string;
         useStaticReference?: boolean;
+        viaAgent?: boolean;
+        mandateContractId?: string;
       };
 
       if (!body.advanceAmount || !body.discountRate) {
@@ -796,6 +1077,7 @@ async function handleRequest(
       const oracle = await fetchOracleFeed();
       const mode = body.useStaticReference ? staticReferenceMode() : oracleAnchoredMode();
       const ledgerTime = new Date(oracle.packageTimestampMs).toISOString();
+      const viaAgent = body.viaAgent ?? false;
 
       const cmd = buildReplaceBidCommand({
         requestContractId: replaceBidId,
@@ -806,6 +1088,8 @@ async function handleRequest(
         redstoneTimestampMs: oracle.packageTimestampMs,
         mode,
         ledgerTime,
+        viaAgent,
+        mandateContractId: viaAgent ? body.mandateContractId : null,
       });
 
       const result = await client.submitAndWaitForTransaction({

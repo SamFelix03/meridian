@@ -104,6 +104,14 @@ export function projectBid(
   contractId: string,
   payload: Record<string, unknown>
 ): BidSummary {
+  const mandateIdRaw = payload.mandateId;
+  let mandateId: string | null = null;
+  if (mandateIdRaw != null && typeof mandateIdRaw === "object") {
+    const tagged = mandateIdRaw as Record<string, unknown>;
+    if (tagged.tag === "Some") mandateId = str(tagged.value);
+  } else if (mandateIdRaw != null && mandateIdRaw !== "") {
+    mandateId = str(mandateIdRaw);
+  }
   return {
     contractId,
     requestId: str(payload.requestId),
@@ -115,5 +123,7 @@ export function projectBid(
     mode: parseBidPricingMode(payload.mode),
     redstoneTimestampMs: Number(payload.redstoneTimestampMs ?? 0),
     ledgerTime: str(payload.ledgerTime),
+    viaAgent: Boolean(payload.viaAgent),
+    mandateId,
   };
 }

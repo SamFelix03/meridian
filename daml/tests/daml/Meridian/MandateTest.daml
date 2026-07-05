@@ -1,0 +1,214 @@
+module Meridian.MandateTest where
+
+import Daml.Script
+import DA.Time
+import DA.Optional
+import Meridian.Financing.FinancingRequest
+import Meridian.Financing.BiddingMandate
+import Meridian.Financing.Bid
+import Meridian.Financing.Types
+import Meridian.FinancingFixtures
+import Meridian.FinancingTest (issuePostedReceivable, openSampleRound, submitOracleBid)
+
+createSampleMandate :
+  Party
+  -> Party
+  -> Decimal
+  -> Decimal
+  -> [Party]
+  -> Script (ContractId BiddingMandate)
+createSampleMandate financier supplier maxExposure minSpread eligible = do
+  submit financier do
+    createCmd BiddingMandate with
+      mandateId = "MANDATE-001"
+      financier
+      maxExposure
+      minSpread
+      eligibleSuppliers = eligible
+      agentEnabled = True
+      revoked = False
+
+submitAgentBid :
+  ContractId FinancingRequest
+  -> Party
+  -> Party
+  -> ContractId BiddingMandate
+  -> Decimal
+  -> Decimal
+  -> Script (ContractId FinancingRequest, ContractId Bid)
+submitAgentBid reqCid financier supplier mandateCid advance discount = do
+  setTime sampleOracleLedgerTime
+  submit financier do
+    exerciseCmd reqCid SubmitBid with
+      financier
+      advanceAmount = advance
+      discountRate = discount
+      redstonePayload = sampleSofrPayloadHex
+      redstoneTimestampMs = sampleRedstoneTimestampMs
+      mode = OracleAnchored
+      ledgerTime = sampleOracleLedgerTime
+      viaAgent = True
+      mandateCid = Some mandateCid
+
+testAgentBidWithinMandate : Script ()
+testAgentBidWithinMandate = script do
+  supplier <- allocateParty "Supplier"
+  buyer <- allocateParty "Buyer"
+  finA <- allocateParty "FinancierA"
+
+  receivableCid <- issuePostedReceivable supplier buyer
+  reqCid <- openSampleRound receivableCid supplier [finA]
+  mandateCid <- createSampleMandate finA supplier 2000.0 0.03 []
+
+  (_reqCid1, bidCid) <- submitAgentBid reqCid finA supplier mandateCid 1500.0 0.05
+
+  Some bid <- queryContractId finA bidCid
+  assert (bid.viaAgent)
+  assert (bid.mandateId == Some "MANDATE-001")
+  assert (bid.advanceAmount == 1500.0)
+
+  pure ()
+
+testManualBidWithoutMandate : Script ()
+testManualBidWithoutMandate = script do
+  supplier <- allocateParty "Supplier"
+  buyer <- allocateParty "Buyer"
+  finA <- allocateParty "FinancierA"
+
+  receivableCid <- issuePostedReceivable supplier buyer
+  reqCid <- openSampleRound receivableCid supplier [finA]
+  (_reqCid1, bidCid) <- submitOracleBid reqCid finA 1500.0 0.05
+
+  Some bid <- queryContractId finA bidCid
+  assert (not bid.viaAgent)
+  assert (bid.mandateId == None)
+
+  pure ()
+
+testAgentBidExceedsMaxExposure : Script ()
+testAgentBidExceedsMaxExposure = script do
+  supplier <- allocateParty "Supplier"
+  buyer <- allocateParty "Buyer"
+  finA <- allocateParty "FinancierA"
+
+  receivableCid <- issuePostedReceivable supplier buyer
+  reqCid <- openSampleRound receivableCid supplier [finA]
+  mandateCid <- createSampleMandate finA supplier 1000.0 0.03 []
+
+  submitMustFail finA do
+    exerciseCmd reqCid SubmitBid with
+      financier = finA
+      advanceAmount = 1500.0
+      discountRate = 0.05
+      redstonePayload = sampleSofrPayloadHex
+      redstoneTimestampMs = sampleRedstoneTimestampMs
+      mode = OracleAnchored
+      ledgerTime = sampleOracleLedgerTime
+      viaAgent = True
+      mandateCid = Some mandateCid
+
+  pure ()
+
+testAgentBidBelowMinSpread : Script ()
+testAgentBidBelowMinSpread = script do
+  supplier <- allocateParty "Supplier"
+  buyer <- allocateParty "Buyer"
+  finA <- allocateParty "FinancierA"
+
+  receivableCid <- issuePostedReceivable supplier buyer
+  reqCid <- openSampleRound receivableCid supplier [finA]
+  mandateCid <- createSampleMandate finA supplier 2000.0 0.08 []
+
+  submitMustFail finA do
+    exerciseCmd reqCid SubmitBid with
+      financier = finA
+      advanceAmount = 1500.0
+      discountRate = 0.05
+      redstonePayload = sampleSofrPayloadHex
+      redstoneTimestampMs = sampleRedstoneTimestampMs
+      mode = OracleAnchored
+      ledgerTime = sampleOracleLedgerTime
+      viaAgent = True
+      mandateCid = Some mandateCid
+
+  pure ()
+
+testAgentBidIneligibleSupplier : Script ()
+testAgentBidIneligibleSupplier = script do
+  supplier <- allocateParty "Supplier"
+  otherSupplier <- allocateParty "OtherSupplier"
+  buyer <- allocateParty "Buyer"
+  finA <- allocateParty "FinancierA"
+
+  receivableCid <- issuePostedReceivable supplier buyer
+  reqCid <- openSampleRound receivableCid supplier [finA]
+  mandateCid <- createSampleMandate finA supplier 2000.0 0.03 [otherSupplier]
+
+  submitMustFail finA do
+    exerciseCmd reqCid SubmitBid with
+      financier = finA
+      advanceAmount = 1500.0
+      discountRate = 0.05
+      redstonePayload = sampleSofrPayloadHex
+      redstoneTimestampMs = sampleRedstoneTimestampMs
+      mode = OracleAnchored
+      ledgerTime = sampleOracleLedgerTime
+      viaAgent = True
+      mandateCid = Some mandateCid
+
+  pure ()
+
+testAgentBidWithoutMandateRef : Script ()
+testAgentBidWithoutMandateRef = script do
+  supplier <- allocateParty "Supplier"
+  buyer <- allocateParty "Buyer"
+  finA <- allocateParty "FinancierA"
+
+  receivableCid <- issuePostedReceivable supplier buyer
+  reqCid <- openSampleRound receivableCid supplier [finA]
+
+  submitMustFail finA do
+    exerciseCmd reqCid SubmitBid with
+      financier = finA
+      advanceAmount = 1500.0
+      discountRate = 0.05
+      redstonePayload = sampleSofrPayloadHex
+      redstoneTimestampMs = sampleRedstoneTimestampMs
+      mode = OracleAnchored
+      ledgerTime = sampleOracleLedgerTime
+      viaAgent = True
+      mandateCid = None
+
+  pure ()
+
+testAgentDisabledOnMandate : Script ()
+testAgentDisabledOnMandate = script do
+  supplier <- allocateParty "Supplier"
+  buyer <- allocateParty "Buyer"
+  finA <- allocateParty "FinancierA"
+
+  receivableCid <- issuePostedReceivable supplier buyer
+  reqCid <- openSampleRound receivableCid supplier [finA]
+  mandateCid <- submit finA do
+    createCmd BiddingMandate with
+      mandateId = "MANDATE-DISABLED"
+      financier = finA
+      maxExposure = 2000.0
+      minSpread = 0.03
+      eligibleSuppliers = []
+      agentEnabled = False
+      revoked = False
+
+  submitMustFail finA do
+    exerciseCmd reqCid SubmitBid with
+      financier = finA
+      advanceAmount = 1500.0
+      discountRate = 0.05
+      redstonePayload = sampleSofrPayloadHex
+      redstoneTimestampMs = sampleRedstoneTimestampMs
+      mode = OracleAnchored
+      ledgerTime = sampleOracleLedgerTime
+      viaAgent = True
+      mandateCid = Some mandateCid
+
+  pure ()

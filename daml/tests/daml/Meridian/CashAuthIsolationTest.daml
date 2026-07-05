@@ -9,6 +9,7 @@ import Splice.Api.Token.AllocationV1 qualified as AllocationV1
 import Meridian.Financing.FinancingRequest
 import Meridian.CashFixtures
 import Meridian.Cash.Utils (emptyExtraArgs)
+import Meridian.Settlement.Types
 import Meridian.FinancingTest (issuePostedReceivable, openSampleRound, submitOracleBid)
 
 -- Step 1 only: factory allocate must succeed with sender + admin actAs.
@@ -73,6 +74,7 @@ testIsolateAwardBidNestedExecute = script do
       settlementAllocationCid = allocCid
       expectedAdvance = 1500.0
       settlementFinancier = financier
+      settlementFinality = Atomic
 
   supplierBal <- holdingBalance supplier
   assert (supplierBal == 1500.0)

@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 
 /** Package-name template reference (works after DAR upload). */
-export const RECEIVABLE_PACKAGE = "com-meridian-receivable-v4";
+export const RECEIVABLE_PACKAGE = "com-meridian-receivable-v6";
 export const CASH_PACKAGE = "com-meridian-cash";
 export const SPLICE_ALLOCATION_FACTORY_INTERFACE =
   "#splice-api-token-allocation-instruction-v1:Splice.Api.Token.AllocationInstructionV1:AllocationFactory";
@@ -21,6 +21,7 @@ export const REPAYMENT_PROOF =
 export const FINANCING = {
   financingRequest: `#${RECEIVABLE_PACKAGE}:Meridian.Financing.FinancingRequest:FinancingRequest`,
   bid: `#${RECEIVABLE_PACKAGE}:Meridian.Financing.Bid:Bid`,
+  biddingMandate: `#${RECEIVABLE_PACKAGE}:Meridian.Financing.BiddingMandate:BiddingMandate`,
   financingRoundFactory: `#${RECEIVABLE_PACKAGE}:Meridian.Financing.FinancingRoundFactory:FinancingRoundFactory`,
 } as const;
 
@@ -31,6 +32,14 @@ export const SYNDICATION = {
   syndicationFactory: `#${RECEIVABLE_PACKAGE}:Meridian.Syndication.SyndicationFactory:SyndicationFactory`,
 } as const;
 
+export const COMPLIANCE = {
+  regulatorJurisdictionGrant: `#${RECEIVABLE_PACKAGE}:Meridian.Compliance.RegulatorJurisdictionGrant:RegulatorJurisdictionGrant`,
+} as const;
+
+export const SETTLEMENT = {
+  settlementAuditRecord: `#${RECEIVABLE_PACKAGE}:Meridian.Settlement.SettlementAuditRecord:SettlementAuditRecord`,
+} as const;
+
 export const TEMPLATE_IDS = {
   receivableProposal: `#${RECEIVABLE_PACKAGE}:Meridian.Receivable.ReceivableProposal:ReceivableProposal`,
   receivable: `#${RECEIVABLE_PACKAGE}:Meridian.Receivable.Receivable:Receivable`,
@@ -38,10 +47,13 @@ export const TEMPLATE_IDS = {
   financingRequest: FINANCING.financingRequest,
   bid: FINANCING.bid,
   financingRoundFactory: FINANCING.financingRoundFactory,
+  biddingMandate: FINANCING.biddingMandate,
   syndicationOffering: SYNDICATION.syndicationOffering,
   syndicationBid: SYNDICATION.syndicationBid,
   participationInterest: SYNDICATION.participationInterest,
   syndicationFactory: SYNDICATION.syndicationFactory,
+  regulatorJurisdictionGrant: COMPLIANCE.regulatorJurisdictionGrant,
+  settlementAuditRecord: SETTLEMENT.settlementAuditRecord,
 } as const;
 
 export const INTERFACE_IDS = {
@@ -108,6 +120,59 @@ export interface SubmitBidArgs {
   redstoneTimestampMs: number;
   mode: BidPricingModeArg;
   ledgerTime: string;
+  /** Agent bids must set viaAgent=true and provide mandateContractId. */
+  viaAgent?: boolean;
+  mandateContractId?: string | null;
+}
+
+export interface CreateBiddingMandateArgs {
+  mandateId: string;
+  financier: string;
+  maxExposure: string;
+  minSpread: string;
+  eligibleSuppliers: string[];
+  agentEnabled: boolean;
+}
+
+export interface UpdateMandateConstraintsArgs {
+  mandateContractId: string;
+  maxExposure: string;
+  minSpread: string;
+  eligibleSuppliers: string[];
+}
+
+export interface SetMandateAgentEnabledArgs {
+  mandateContractId: string;
+  enabled: boolean;
+}
+
+export interface RevokeMandateArgs {
+  mandateContractId: string;
+}
+
+export type SettlementFinalityArg = "Atomic" | "ReassignmentMediated" | "EscrowFallback";
+
+export interface CoSignAndIssueArgs {
+  proposalContractId: string;
+  jurisdiction?: string | null;
+  platformOperator: string;
+}
+
+export interface GrantComplianceObserverArgs {
+  receivableContractId: string;
+  observerParty: string;
+  expectedJurisdiction: string;
+}
+
+export interface CreateRegulatorJurisdictionGrantArgs {
+  grantId: string;
+  platformOperator: string;
+  regulator: string;
+  jurisdiction: string;
+}
+
+export interface RevokeRegulatorJurisdictionGrantArgs {
+  grantContractId: string;
 }
 
 export interface AwardBidArgs {
@@ -116,6 +181,7 @@ export interface AwardBidArgs {
   settlementAllocationCid: string;
   expectedAdvance: string;
   settlementFinancier: string;
+  settlementFinality?: SettlementFinalityArg;
 }
 
 export interface CreateAdvanceAllocationArgs {
@@ -252,14 +318,25 @@ export function buildCreateReceivableProposalCommand(
 }
 
 export function buildCoSignAndIssueCommand(
-  contractId: string
+  args: CoSignAndIssueArgs | string
 ): LedgerCommand {
+  const contractId = typeof args === "string" ? args : args.proposalContractId;
+  const jurisdiction =
+    typeof args === "string" ? null : (args.jurisdiction ?? null);
+  const platformOperator =
+    typeof args === "string" ? undefined : args.platformOperator;
+  if (!platformOperator) {
+    throw new Error("platformOperator is required for CoSignAndIssue");
+  }
   return {
     ExerciseCommand: {
       templateId: TEMPLATE_IDS.receivableProposal,
       contractId,
       choice: "CoSignAndIssue",
-      choiceArgument: {},
+      choiceArgument: {
+        jurisdiction,
+        platformOperator,
+      },
     },
   };
 }
@@ -326,7 +403,68 @@ export function buildOpenFinancingRoundCommand(
   };
 }
 
+export function buildCreateBiddingMandateCommand(
+  args: CreateBiddingMandateArgs
+): LedgerCommand {
+  return {
+    CreateCommand: {
+      templateId: TEMPLATE_IDS.biddingMandate,
+      createArguments: {
+        mandateId: args.mandateId,
+        financier: args.financier,
+        maxExposure: args.maxExposure,
+        minSpread: args.minSpread,
+        eligibleSuppliers: args.eligibleSuppliers,
+        agentEnabled: args.agentEnabled,
+        revoked: false,
+      },
+    },
+  };
+}
+
+export function buildRevokeMandateCommand(args: RevokeMandateArgs): LedgerCommand {
+  return {
+    ExerciseCommand: {
+      templateId: TEMPLATE_IDS.biddingMandate,
+      contractId: args.mandateContractId,
+      choice: "Revoke",
+      choiceArgument: {},
+    },
+  };
+}
+
+export function buildUpdateMandateCommand(
+  args: UpdateMandateConstraintsArgs
+): LedgerCommand {
+  return {
+    ExerciseCommand: {
+      templateId: TEMPLATE_IDS.biddingMandate,
+      contractId: args.mandateContractId,
+      choice: "UpdateConstraints",
+      choiceArgument: {
+        maxExposure: args.maxExposure,
+        minSpread: args.minSpread,
+        eligibleSuppliers: args.eligibleSuppliers,
+      },
+    },
+  };
+}
+
+export function buildSetMandateAgentEnabledCommand(
+  args: SetMandateAgentEnabledArgs
+): LedgerCommand {
+  return {
+    ExerciseCommand: {
+      templateId: TEMPLATE_IDS.biddingMandate,
+      contractId: args.mandateContractId,
+      choice: "SetAgentEnabled",
+      choiceArgument: { enabled: args.enabled },
+    },
+  };
+}
+
 export function buildSubmitBidCommand(args: SubmitBidArgs): LedgerCommand {
+  const viaAgent = args.viaAgent ?? false;
   return {
     ExerciseCommand: {
       templateId: TEMPLATE_IDS.financingRequest,
@@ -340,6 +478,8 @@ export function buildSubmitBidCommand(args: SubmitBidArgs): LedgerCommand {
         redstoneTimestampMs: String(args.redstoneTimestampMs),
         mode: args.mode,
         ledgerTime: args.ledgerTime,
+        viaAgent,
+        mandateCid: viaAgent ? (args.mandateContractId ?? null) : null,
       },
     },
   };
@@ -356,7 +496,54 @@ export function buildAwardBidCommand(args: AwardBidArgs): LedgerCommand {
         settlementAllocationCid: args.settlementAllocationCid,
         expectedAdvance: args.expectedAdvance,
         settlementFinancier: args.settlementFinancier,
+        settlementFinality: args.settlementFinality ?? "Atomic",
       },
+    },
+  };
+}
+
+export function buildGrantComplianceObserverCommand(
+  args: GrantComplianceObserverArgs
+): LedgerCommand {
+  return {
+    ExerciseCommand: {
+      templateId: TEMPLATE_IDS.receivable,
+      contractId: args.receivableContractId,
+      choice: "GrantComplianceObserver",
+      choiceArgument: {
+        observerParty: args.observerParty,
+        expectedJurisdiction: args.expectedJurisdiction,
+      },
+    },
+  };
+}
+
+export function buildCreateRegulatorJurisdictionGrantCommand(
+  args: CreateRegulatorJurisdictionGrantArgs
+): LedgerCommand {
+  return {
+    CreateCommand: {
+      templateId: TEMPLATE_IDS.regulatorJurisdictionGrant,
+      createArguments: {
+        grantId: args.grantId,
+        platformOperator: args.platformOperator,
+        regulator: args.regulator,
+        jurisdiction: args.jurisdiction,
+        active: true,
+      },
+    },
+  };
+}
+
+export function buildRevokeRegulatorJurisdictionGrantCommand(
+  args: RevokeRegulatorJurisdictionGrantArgs
+): LedgerCommand {
+  return {
+    ExerciseCommand: {
+      templateId: TEMPLATE_IDS.regulatorJurisdictionGrant,
+      contractId: args.grantContractId,
+      choice: "Revoke",
+      choiceArgument: {},
     },
   };
 }
@@ -617,6 +804,7 @@ export function buildEnterStaticFallbackCommand(
 }
 
 export function buildReplaceBidCommand(args: ReplaceBidArgs): LedgerCommand {
+  const viaAgent = args.viaAgent ?? false;
   return {
     ExerciseCommand: {
       templateId: TEMPLATE_IDS.financingRequest,
@@ -630,6 +818,8 @@ export function buildReplaceBidCommand(args: ReplaceBidArgs): LedgerCommand {
         redstoneTimestampMs: String(args.redstoneTimestampMs),
         mode: args.mode,
         ledgerTime: args.ledgerTime,
+        viaAgent,
+        mandateCid: viaAgent ? (args.mandateContractId ?? null) : null,
       },
     },
   };

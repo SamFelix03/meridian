@@ -1,0 +1,8 @@
+module Meridian.Settlement.Types where
+
+-- | Immutable settlement-finality classification (§8.4).
+data SettlementFinality
+  = Atomic
+  | ReassignmentMediated
+  | EscrowFallback
+  deriving (Eq, Show)

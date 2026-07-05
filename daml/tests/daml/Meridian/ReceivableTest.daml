@@ -14,6 +14,7 @@ import Meridian.Financing.FinancingRequest
 import Meridian.Financing.FinancingRoundFactory
 import Meridian.Financing.Types
 import Meridian.FinancingFixtures
+import Meridian.Settlement.Types
 import Meridian.CashFixtures
 
 sampleLineItems : [LineItem]
@@ -43,6 +44,18 @@ lookupSupplierView p receivableCid = do
   let ifaceCid = toInterfaceContractId @ISupplierView receivableCid
   pure (join (fmap snd (find (\(cid, _) -> cid == ifaceCid) rows)))
 
+coSignAndIssue :
+  ContractId ReceivableProposal
+  -> Party
+  -> Optional Text
+  -> Script (ContractId Receivable)
+coSignAndIssue proposalCid buyer jurisdiction = do
+  platformOp <- allocateParty "PlatformOp"
+  submit buyer do
+    exerciseCmd proposalCid CoSignAndIssue with
+      jurisdiction
+      platformOperator = platformOp
+
 -- | Happy path: supplier proposes, buyer co-signs, receivable issued.
 testJointIssuance : Script ()
 testJointIssuance = script do
@@ -60,8 +73,7 @@ testJointIssuance = script do
       dueDate = sampleDueDate
       consentSource = InlineConsent True
 
-  receivableCid <- submit buyer do
-    exerciseCmd proposalCid CoSignAndIssue
+  receivableCid <- coSignAndIssue proposalCid buyer None
 
   Some receivable <- queryContractId supplier receivableCid
   assert (receivable.state == Issued)
@@ -102,8 +114,7 @@ testConsentPolicyInheritance = script do
       dueDate = sampleDueDate
       consentSource = FromPolicy policyCid
 
-  receivableCid <- submit buyer do
-    exerciseCmd proposalCid CoSignAndIssue
+  receivableCid <- coSignAndIssue proposalCid buyer None
 
   Some receivable <- queryContractId buyer receivableCid
   assert (receivable.assignmentConsentGranted)
@@ -136,8 +147,11 @@ testConsentPolicyDenied = script do
       dueDate = sampleDueDate
       consentSource = FromPolicy policyCid
 
+  platformOp <- allocateParty "PlatformOp"
   submitMustFail buyer do
-    exerciseCmd proposalCid CoSignAndIssue
+    exerciseCmd proposalCid CoSignAndIssue with
+      jurisdiction = None
+      platformOperator = platformOp
 
   pure ()
 
@@ -159,8 +173,7 @@ testStateTransitions = script do
       dueDate = sampleDueDate
       consentSource = InlineConsent True
 
-  cid <- submit buyer do
-    exerciseCmd proposalCid CoSignAndIssue
+  cid <- coSignAndIssue proposalCid buyer None
 
   cid1 <- submit supplier do
     exerciseCmd cid PostForBid
@@ -186,6 +199,8 @@ testStateTransitions = script do
       redstoneTimestampMs = sampleRedstoneTimestampMs
       mode = OracleAnchored
       ledgerTime = sampleOracleLedgerTime
+      viaAgent = False
+      mandateCid = None
 
   admin <- allocateParty "Registry"
   (registryCid, rulesCid) <- bootstrapCashRegistry admin
@@ -200,6 +215,7 @@ testStateTransitions = script do
       settlementAllocationCid = allocCid
       expectedAdvance = 1800.0
       settlementFinancier = financier
+      settlementFinality = Atomic
 
   cid3 <- submit buyer do
     exerciseCmd cid2 MarkRepaid
@@ -226,8 +242,7 @@ testInvalidTransition = script do
       dueDate = sampleDueDate
       consentSource = InlineConsent True
 
-  cid <- submit buyer do
-    exerciseCmd proposalCid CoSignAndIssue
+  cid <- coSignAndIssue proposalCid buyer None
 
   submitMustFail buyer do
     exerciseCmd cid MarkRepaid
@@ -252,8 +267,7 @@ testFinancierNoVisibility = script do
       dueDate = sampleDueDate
       consentSource = InlineConsent True
 
-  receivableCid <- submit buyer do
-    exerciseCmd proposalCid CoSignAndIssue
+  receivableCid <- coSignAndIssue proposalCid buyer None
 
   financierContracts <- query @Receivable financier
   assert (null financierContracts)
@@ -280,8 +294,7 @@ testInterfaceViewPrivacy = script do
       dueDate = sampleDueDate
       consentSource = InlineConsent True
 
-  receivableCid <- submit buyer do
-    exerciseCmd proposalCid CoSignAndIssue
+  receivableCid <- coSignAndIssue proposalCid buyer None
 
   supplierView <- lookupSupplierView supplier receivableCid
   assert (isSome supplierView)
@@ -314,7 +327,7 @@ testScuReceivableV010Compatibility = script do
       dueDate = sampleDueDate
       consentSource = InlineConsent True
 
-  receivableCid <- submit buyer do exerciseCmd proposalCid CoSignAndIssue
+  receivableCid <- coSignAndIssue proposalCid buyer None
   Some receivable <- queryContractId supplier receivableCid
   assert (receivable.jurisdiction == None)
   assert (null receivable.invitedFinanciers)

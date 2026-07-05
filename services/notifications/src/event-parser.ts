@@ -4,6 +4,17 @@ function str(v: unknown): string {
   return v == null ? "" : String(v);
 }
 
+function parseOptionalText(raw: unknown): string | null {
+  if (raw == null) return null;
+  if (typeof raw === "object") {
+    const tagged = raw as Record<string, unknown>;
+    if (tagged.tag === "Some") return str(tagged.value);
+    return null;
+  }
+  const text = str(raw);
+  return text || null;
+}
+
 function activeBidCount(raw: unknown): number {
   if (!raw || typeof raw !== "object") return 0;
   const obj = raw as Record<string, unknown>;
@@ -100,10 +111,31 @@ export function parseNotificationEvents(events: unknown[]): MeridianNotification
       templateId.includes("Financing.Bid:Bid") ||
       (templateId.includes(":Bid:Bid") && templateId.includes("Financing"))
     ) {
+      const viaAgent = Boolean(args.viaAgent);
+      const mandateId = parseOptionalText(args.mandateId);
+      if (viaAgent && mandateId) {
+        out.push({
+          type: "agent.bid_submitted",
+          requestId: str(args.requestId),
+          bidContractId: contractId,
+          financier: str(args.financier),
+          mandateId,
+        });
+      } else {
+        out.push({
+          type: "bid.submitted",
+          requestId: str(args.requestId),
+          bidContractId: contractId,
+          financier: str(args.financier),
+        });
+      }
+    }
+
+    if (templateId.includes("BiddingMandate:BiddingMandate")) {
       out.push({
-        type: "bid.submitted",
-        requestId: str(args.requestId),
-        bidContractId: contractId,
+        type: "mandate.created",
+        mandateId: str(args.mandateId),
+        contractId,
         financier: str(args.financier),
       });
     }

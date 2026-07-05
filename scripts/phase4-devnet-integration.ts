@@ -93,6 +93,7 @@ async function fundReceivable(
   client: JsonLedgerClient,
   supplier: string,
   buyer: string,
+  platformOperator: string,
   financierA: string,
   oracle: OracleSnapshot
 ): Promise<{ fundedReceivableCid: string; receivableId: string }> {
@@ -119,7 +120,13 @@ async function fundReceivable(
 
   const issueResult = await client.submitAndWaitForTransaction({
     actAs: [buyer],
-    commands: [buildCoSignAndIssueCommand(proposalCid)],
+    commands: [
+      buildCoSignAndIssueCommand({
+        proposalContractId: proposalCid,
+        jurisdiction: "US",
+        platformOperator,
+      }),
+    ],
   });
   const receivableCid = extractCreatedContractId(issueResult);
   assert.ok(receivableCid);
@@ -217,6 +224,7 @@ async function main(): Promise<void> {
   const buyer = party(manifest, "meridian-buyer");
   const financierA = party(manifest, "meridian-financier-a");
   const financierB = party(manifest, "meridian-financier-b");
+  const platformOperator = party(manifest, "meridian-platform");
   const cash = loadCashManifest(ROOT);
 
   const auth = new DevNetAuthClient(loadDevNetConfigFromEnv());
@@ -228,6 +236,7 @@ async function main(): Promise<void> {
     client,
     supplier,
     buyer,
+    platformOperator,
     financierA,
     oracle
   );

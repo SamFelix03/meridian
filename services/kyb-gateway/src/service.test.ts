@@ -21,14 +21,35 @@ describe("KybGatewayService", () => {
     rmSync(dir, { recursive: true, force: true });
   });
 
-  it("approves all requests in Phase 0 stub mode", () => {
+  it("creates PENDING verification for valid requests", () => {
     const res = service.verify({
       legalEntityId: "acme-corp",
       jurisdiction: "US",
       requestedRoles: ["Supplier"],
     });
-    assert.equal(res.status, "APPROVED");
+    assert.equal(res.status, "PENDING");
     assert.ok(res.verificationId);
+    assert.equal(service.validateVerificationId(res.verificationId), false);
+  });
+
+  it("rejects blocked legal entities immediately", () => {
+    const res = service.verify({
+      legalEntityId: "BLOCKED-ACME",
+      jurisdiction: "US",
+      requestedRoles: ["Supplier"],
+    });
+    assert.equal(res.status, "REJECTED");
+    assert.equal(service.validateVerificationId(res.verificationId), false);
+  });
+
+  it("approves only after explicit completion", () => {
+    const res = service.verify({
+      legalEntityId: "widget-inc",
+      jurisdiction: "US",
+      requestedRoles: ["Buyer"],
+    });
+    const completed = service.complete(res.verificationId, "APPROVED");
+    assert.equal(completed.status, "APPROVED");
     assert.ok(service.validateVerificationId(res.verificationId));
   });
 

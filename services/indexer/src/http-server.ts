@@ -4,7 +4,7 @@ import type { ProjectionStore } from "./projection-store.js";
 export interface IndexerHttpConfig {
   port: number;
   orgId: string;
-  role: "Supplier" | "Buyer" | "Financier";
+  role: "Supplier" | "Buyer" | "Financier" | "Regulator" | "PlatformOperator";
   actingParty?: string;
   /** SOFR reference rate as decimal (e.g. 0.0366). */
   sofrReferenceRate?: number;
@@ -166,6 +166,13 @@ async function handleRequest(
       return;
     }
 
+    if (config.role === "Financier" && url === "/financier/mandates") {
+      json(res, 200, {
+        mandates: store.getFinancierMandates(config.actingParty ?? ""),
+      });
+      return;
+    }
+
     if (config.role === "Financier" && url === "/financier/syndication/offerings") {
       json(res, 200, { offerings: store.getSyndicationOfferings() });
       return;
@@ -203,6 +210,29 @@ async function handleRequest(
       json(res, 200, {
         bids: store.getSyndicationBidsForOffering(offeringId),
       });
+      return;
+    }
+
+    if (config.role === "Regulator" && url.startsWith("/regulator/exposure")) {
+      const parsed = new URL(url, "http://localhost");
+      const jurisdiction = parsed.searchParams.get("jurisdiction") ?? undefined;
+      json(res, 200, {
+        rows: store.getRegulatorExposureRows(jurisdiction),
+        rollups: store.getRegulatorExposureRollups(jurisdiction),
+      });
+      return;
+    }
+
+    if (config.role === "PlatformOperator" && url === "/ops/settlement-finality") {
+      json(res, 200, {
+        summary: store.getSettlementFinalitySummary(),
+        audits: store.getSettlementAudits(),
+      });
+      return;
+    }
+
+    if (config.role === "PlatformOperator" && url === "/ops/regulator-grants") {
+      json(res, 200, { grants: store.getRegulatorGrants() });
       return;
     }
 

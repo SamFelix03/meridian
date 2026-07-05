@@ -14,6 +14,8 @@
     "serve:buyer": "node dist/cli.js ../../infra/configs/indexer-buyer.yaml --serve",
     "serve:financier-a": "node dist/cli.js ../../infra/configs/indexer-financier-a.yaml --serve",
     "serve:financier-b": "node dist/cli.js ../../infra/configs/indexer-financier-b.yaml --serve",
+    "serve:regulator": "node dist/cli.js ../../infra/configs/indexer-regulator.yaml --serve",
+    "serve:platform": "node dist/cli.js ../../infra/configs/indexer-platform.yaml --serve",
     "test": "node --test dist/replay-indexer.test.js dist/receivable-projector.test.js dist/financing-projector.test.js dist/bid-comparison.test.js"
   },
   "dependencies": {

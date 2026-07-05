@@ -1,0 +1,31 @@
+module Meridian.Compliance.RegulatorJurisdictionGrant where
+
+-- | Registers which regulator party covers a jurisdiction (ops admin, §14.2).
+template RegulatorJurisdictionGrant
+  with
+    grantId : Text
+    platformOperator : Party
+    regulator : Party
+    jurisdiction : Text
+    active : Bool
+  where
+    signatory platformOperator
+    observer regulator
+
+    choice Revoke : ContractId RegulatorJurisdictionGrant
+      controller platformOperator
+      do create this with active = False
+
+createRegulatorJurisdictionGrant :
+  Text
+  -> Party
+  -> Party
+  -> Text
+  -> Update (ContractId RegulatorJurisdictionGrant)
+createRegulatorJurisdictionGrant grantId platformOperator regulator jurisdiction =
+  create RegulatorJurisdictionGrant with
+    grantId
+    platformOperator
+    regulator
+    jurisdiction
+    active = True

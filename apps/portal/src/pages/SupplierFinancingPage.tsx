@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Award, Clock, Pause, RefreshCw, Timer } from "lucide-react";
 import {
   api,
   useNotifications,
@@ -6,6 +7,24 @@ import {
   type FinancingRequestSummary,
   type SupplierReceivable,
 } from "../api";
+import { usePageTab } from "../hooks/usePageTab";
+import { Alert, EmptyState, GuidancePanel, PageHeader } from "../components/ui/Alert";
+import { Badge } from "../components/ui/Badge";
+import { Button } from "../components/ui/Button";
+import { Card, Surface } from "../components/ui/Surface";
+import { CustomSelect } from "../components/ui/CustomSelect";
+import { Checkbox, Field, FieldGroup, FieldLabel } from "../components/ui/Field";
+import { Input } from "../components/ui/Input";
+import { PageTabBar } from "../components/ui/PageTabBar";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/Table";
+import { truncateParty } from "../lib/utils";
 
 function defaultDeadline(): string {
   const d = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
@@ -13,12 +32,11 @@ function defaultDeadline(): string {
 }
 
 export function SupplierFinancingPage() {
+  const [tab, setTab] = usePageTab(["setup", "rounds"] as const, "setup");
   const [receivables, setReceivables] = useState<SupplierReceivable[]>([]);
   const [rounds, setRounds] = useState<FinancingRequestSummary[]>([]);
   const [bidMap, setBidMap] = useState<Record<string, BidComparisonRow[]>>({});
-  const [parties, setParties] = useState<{ financierA: string; financierB: string } | null>(
-    null
-  );
+  const [parties, setParties] = useState<{ financierA: string; financierB: string } | null>(null);
   const [error, setError] = useState("");
   const [selectedReceivable, setSelectedReceivable] = useState("");
   const [deadline, setDeadline] = useState(defaultDeadline);
@@ -26,7 +44,6 @@ export function SupplierFinancingPage() {
   const [pricingMax, setPricingMax] = useState("0.15");
   const [inviteA, setInviteA] = useState(true);
   const [inviteB, setInviteB] = useState(true);
-
   const [awardMsg, setAwardMsg] = useState("");
   const [postingId, setPostingId] = useState<string | null>(null);
 
@@ -152,175 +169,295 @@ export function SupplierFinancingPage() {
   }
 
   return (
-    <div>
-      <h1>Supplier Financing</h1>
-      <p>Configure sealed-bid rounds, compare oracle-anchored bids, and award atomically.</p>
-      {error && <p className="error">{error}</p>}
-      {awardMsg && <p className="success">{awardMsg}</p>}
+    <div className="space-y-6">
+      <PageHeader
+        title="Supplier Financing"
+        description="Configure sealed-bid rounds, compare oracle-anchored bids, and award atomically."
+      />
 
-      {issued.length > 0 && (
+      {error && <Alert variant="destructive">{error}</Alert>}
+      {awardMsg && <Alert variant="success">{awardMsg}</Alert>}
+
+      <PageTabBar
+        tabs={[
+          { id: "setup", label: "Open Round", count: posted.length || undefined },
+          { id: "rounds", label: "Financing Rounds", count: rounds.length },
+        ]}
+        activeTab={tab}
+        onTabChange={setTab}
+      />
+
+      {tab === "setup" && (
         <>
-          <h2>Ready to post ({issued.length})</h2>
-          <p>After buyer co-sign, post receivables for bid before opening a financing round.</p>
-          {issued.map((r) => (
-            <div key={r.contractId} className="card">
-              <strong>{r.receivableId}</strong>{" "}
-              <span className="badge">{r.state}</span>
-              <p>
-                {r.faceValue} {r.currency} · due {r.dueDate}
-              </p>
-              <button
-                type="button"
-                onClick={() => handlePostForBid(r.contractId)}
-                disabled={postingId === r.contractId}
-              >
-                {postingId === r.contractId ? "Posting…" : "Post for bid"}
-              </button>
-            </div>
-          ))}
+      {issued.length > 0 && (
+        <div id="ready-to-post">
+          <h2 className="mb-2 font-heading text-lg font-semibold text-foreground">
+            Ready to Post ({issued.length})
+          </h2>
+          <p className="mb-4 text-sm text-muted-foreground">
+            After buyer co-sign, post receivables for bid before opening a financing round.
+          </p>
+          <div className="grid gap-4">
+            {issued.map((r) => (
+              <Card key={r.contractId}>
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <strong className="font-heading">{r.receivableId}</strong>
+                      <Badge>{r.state}</Badge>
+                    </div>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {r.faceValue} {r.currency} · due {r.dueDate}
+                    </p>
+                  </div>
+                  <Button
+                    type="button"
+                    size="sm"
+                    onClick={() => handlePostForBid(r.contractId)}
+                    disabled={postingId === r.contractId}
+                  >
+                    {postingId === r.contractId ? "Posting…" : "Post for bid"}
+                  </Button>
+                </div>
+              </Card>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <Surface title="Open Financing Round" emphasis>
+        {posted.length === 0 ? (
+          <GuidancePanel
+            title={
+              issued.length > 0
+                ? "Post receivables before opening a round"
+                : "No receivables ready for financing"
+            }
+            description={
+              issued.length > 0
+                ? "You have issued receivables that still need to be posted for bid. Financing rounds can only be opened on receivables in PostedForBid state."
+                : "Financing rounds require a receivable that has been issued by the buyer and posted for bid. Start on the Supplier Portal by proposing an invoice."
+            }
+            steps={[
+              "Propose an invoice to the buyer on the Supplier Portal",
+              "Wait for the buyer to co-sign and issue the receivable",
+              "Post the receivable for bid once it reaches Issued state",
+              "Return here to configure pricing bands and open a sealed-bid round",
+            ]}
+            primaryAction={{
+              label: issued.length > 0 ? "Go to Supplier Portal" : "Issue your first invoice",
+              to: "/supplier/portal",
+            }}
+            secondaryAction={
+              issued.length > 0
+                ? {
+                    label: "View receivables to post",
+                    onClick: () =>
+                      document
+                        .getElementById("ready-to-post")
+                        ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                  }
+                : undefined
+            }
+          />
+        ) : (
+          <form onSubmit={handleOpenRound}>
+            <FieldGroup>
+              <Field>
+                <FieldLabel htmlFor="receivable">Receivable (PostedForBid)</FieldLabel>
+                <CustomSelect
+                  id="receivable"
+                  value={selectedReceivable}
+                  onChange={setSelectedReceivable}
+                  placeholder="Select receivable…"
+                  options={posted.map((r) => ({
+                    value: r.contractId,
+                    label: `${r.receivableId} — ${r.faceValue} ${r.currency}`,
+                    description: `Due ${r.dueDate}`,
+                  }))}
+                />
+              </Field>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <Field>
+                  <FieldLabel htmlFor="deadline">Deadline</FieldLabel>
+                  <Input
+                    id="deadline"
+                    type="datetime-local"
+                    value={deadline}
+                    onChange={(e) => setDeadline(e.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="pricingMin">Pricing band min (decimal rate)</FieldLabel>
+                  <Input
+                    id="pricingMin"
+                    value={pricingMin}
+                    onChange={(e) => setPricingMin(e.target.value)}
+                  />
+                </Field>
+                <Field>
+                  <FieldLabel htmlFor="pricingMax">Pricing band max (decimal rate)</FieldLabel>
+                  <Input
+                    id="pricingMax"
+                    value={pricingMax}
+                    onChange={(e) => setPricingMax(e.target.value)}
+                  />
+                </Field>
+              </div>
+              <div className="flex flex-wrap gap-4">
+                <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+                  <Checkbox checked={inviteA} onChange={(e) => setInviteA(e.target.checked)} />
+                  Invite Financier A
+                </label>
+                <label className="flex cursor-pointer items-center gap-2.5 text-sm">
+                  <Checkbox checked={inviteB} onChange={(e) => setInviteB(e.target.checked)} />
+                  Invite Financier B
+                </label>
+              </div>
+              <Button type="submit">
+                <Clock className="size-4" />
+                Open Round
+              </Button>
+            </FieldGroup>
+          </form>
+        )}
+      </Surface>
         </>
       )}
 
-      <h2>Open Financing Round</h2>
-      <form onSubmit={handleOpenRound}>
-        <label>
-          Receivable (PostedForBid)
-          <select
-            value={selectedReceivable}
-            onChange={(e) => setSelectedReceivable(e.target.value)}
-            required
-          >
-            <option value="">Select receivable…</option>
-            {posted.map((r) => (
-              <option key={r.contractId} value={r.contractId}>
-                {r.receivableId} — {r.faceValue} {r.currency}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label>
-          Deadline
-          <input
-            type="datetime-local"
-            value={deadline}
-            onChange={(e) => setDeadline(e.target.value)}
-          />
-        </label>
-        <label>
-          Pricing band min (decimal rate)
-          <input value={pricingMin} onChange={(e) => setPricingMin(e.target.value)} />
-        </label>
-        <label>
-          Pricing band max (decimal rate)
-          <input value={pricingMax} onChange={(e) => setPricingMax(e.target.value)} />
-        </label>
-        <label>
-          <input type="checkbox" checked={inviteA} onChange={(e) => setInviteA(e.target.checked)} />
-          Invite Financier A
-        </label>
-        <label>
-          <input type="checkbox" checked={inviteB} onChange={(e) => setInviteB(e.target.checked)} />
-          Invite Financier B
-        </label>
-        <button type="submit" disabled={posted.length === 0}>
-          Open Round
-        </button>
-      </form>
-      {posted.length === 0 && (
-        <p className="error">No receivables in PostedForBid state — issue and post one first.</p>
-      )}
+      {tab === "rounds" && (
+      <div>
+        <h2 className="mb-4 font-heading text-lg font-semibold text-foreground">
+          Financing Rounds ({rounds.length})
+        </h2>
+        {rounds.length === 0 ? (
+          <EmptyState>No financing rounds yet.</EmptyState>
+        ) : (
+          <div className="space-y-4">
+            {rounds.map((round) => (
+              <Card key={round.contractId} className="gap-5">
+                <div className="flex flex-wrap items-start justify-between gap-3">
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <strong className="font-heading text-base">{round.requestId}</strong>
+                      <Badge variant="secondary">{round.roundState}</Badge>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Deadline: {round.deadline} · Band {round.pricingBandMin}–
+                      {round.pricingBandMax} · {round.activeBidCount} active bid(s)
+                    </p>
+                    <p className="text-xs text-muted-foreground">
+                      Receivable: {truncateParty(round.receivableCid, 28)}
+                    </p>
+                  </div>
+                </div>
 
-      <h2>Financing Rounds ({rounds.length})</h2>
-      {rounds.map((round) => (
-        <div key={round.contractId} className="card">
-          <strong>{round.requestId}</strong>{" "}
-          <span className="badge">{round.roundState}</span>
-          <p>
-            Deadline: {round.deadline} · Band {round.pricingBandMin}–{round.pricingBandMax} ·{" "}
-            {round.activeBidCount} active bid(s)
-          </p>
-          <p>Receivable: {round.receivableCid.slice(0, 28)}…</p>
-
-          {(round.roundState === "RoundOpen" ||
-            round.roundState === "StaticReferenceFallback" ||
-            round.roundState === "Paused") && (
-            <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-              {round.roundState === "RoundOpen" && (
-                <>
-                  <button type="button" className="secondary" onClick={() => handlePause(round.contractId)}>
-                    Pause Round
-                  </button>
-                  <button
-                    type="button"
-                    className="secondary"
-                    onClick={() => handleStaticFallback(round.contractId)}
-                  >
-                    Enter Static Reference Fallback
-                  </button>
-                </>
-              )}
-              <button
-                type="button"
-                className="secondary"
-                onClick={() => handleExpire(round.contractId)}
-              >
-                Expire Round (post-deadline)
-              </button>
-            </div>
-          )}
-
-          <h3>Bid Comparison</h3>
-          {(bidMap[round.contractId] ?? []).length === 0 ? (
-            <p>No bids yet.</p>
-          ) : (
-            <table>
-              <thead>
-                <tr>
-                  <th>Rank</th>
-                  <th>Financier</th>
-                  <th>Advance</th>
-                  <th>Discount</th>
-                  <th>Effective Rate</th>
-                  <th>Mode</th>
-                  <th>Oracle</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody>
-                {(bidMap[round.contractId] ?? []).map((bid) => (
-                  <tr key={bid.bidContractId}>
-                    <td>{bid.rank}</td>
-                    <td>{bid.financier.slice(0, 18)}…</td>
-                    <td>{bid.advanceAmount}</td>
-                    <td>{bid.discountRate}</td>
-                    <td>{bid.effectiveRate}</td>
-                    <td>{bid.mode}</td>
-                    <td>{bid.oracleFresh ? "fresh" : "stale"}</td>
-                    <td>
-                      {round.roundState === "RoundOpen" ||
-                      round.roundState === "StaticReferenceFallback" ? (
-                        <button
+                {(round.roundState === "RoundOpen" ||
+                  round.roundState === "StaticReferenceFallback" ||
+                  round.roundState === "Paused") && (
+                  <div className="flex flex-wrap gap-2">
+                    {round.roundState === "RoundOpen" && (
+                      <>
+                        <Button
                           type="button"
-                          onClick={() =>
-                            handleAward(
-                              round.contractId,
-                              bid.bidContractId,
-                              bid.advanceAmount,
-                              bid.financier
-                            )
-                          }
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handlePause(round.contractId)}
                         >
-                          Award (DvP)
-                        </button>
-                      ) : null}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </div>
-      ))}
+                          <Pause className="size-3.5" />
+                          Pause Round
+                        </Button>
+                        <Button
+                          type="button"
+                          variant="secondary"
+                          size="sm"
+                          onClick={() => handleStaticFallback(round.contractId)}
+                        >
+                          <RefreshCw className="size-3.5" />
+                          Enter Static Reference Fallback
+                        </Button>
+                      </>
+                    )}
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={() => handleExpire(round.contractId)}
+                    >
+                      <Timer className="size-3.5" />
+                      Expire Round (post-deadline)
+                    </Button>
+                  </div>
+                )}
+
+                <div>
+                  <h3 className="mb-3 font-heading text-sm font-semibold text-foreground">
+                    Bid Comparison
+                  </h3>
+                  {(bidMap[round.contractId] ?? []).length === 0 ? (
+                    <EmptyState>No bids yet.</EmptyState>
+                  ) : (
+                    <Table>
+                      <TableHeader>
+                        <TableRow>
+                          <TableHead>Rank</TableHead>
+                          <TableHead>Financier</TableHead>
+                          <TableHead>Advance</TableHead>
+                          <TableHead>Discount</TableHead>
+                          <TableHead>Effective Rate</TableHead>
+                          <TableHead>Mode</TableHead>
+                          <TableHead>Oracle</TableHead>
+                          <TableHead />
+                        </TableRow>
+                      </TableHeader>
+                      <TableBody>
+                        {(bidMap[round.contractId] ?? []).map((bid) => (
+                          <TableRow key={bid.bidContractId}>
+                            <TableCell>{bid.rank}</TableCell>
+                            <TableCell>{truncateParty(bid.financier, 18)}</TableCell>
+                            <TableCell>{bid.advanceAmount}</TableCell>
+                            <TableCell>{bid.discountRate}</TableCell>
+                            <TableCell>{bid.effectiveRate}</TableCell>
+                            <TableCell>
+                              <Badge variant="outline">{bid.mode}</Badge>
+                            </TableCell>
+                            <TableCell>
+                              <Badge variant={bid.oracleFresh ? "success" : "destructive"}>
+                                {bid.oracleFresh ? "fresh" : "stale"}
+                              </Badge>
+                            </TableCell>
+                            <TableCell>
+                              {round.roundState === "RoundOpen" ||
+                              round.roundState === "StaticReferenceFallback" ? (
+                                <Button
+                                  type="button"
+                                  size="sm"
+                                  onClick={() =>
+                                    handleAward(
+                                      round.contractId,
+                                      bid.bidContractId,
+                                      bid.advanceAmount,
+                                      bid.financier
+                                    )
+                                  }
+                                >
+                                  <Award className="size-3.5" />
+                                  Award (DvP)
+                                </Button>
+                              ) : null}
+                            </TableCell>
+                          </TableRow>
+                        ))}
+                      </TableBody>
+                    </Table>
+                  )}
+                </div>
+              </Card>
+            ))}
+          </div>
+        )}
+      </div>
+      )}
     </div>
   );
 }

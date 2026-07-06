@@ -1,44 +1,60 @@
 import { useCallback, useEffect, useState } from "react";
+import { FileText, Plus, Scale, Send, ShieldCheck } from "lucide-react";
 import { api, useNotifications, type SupplierReceivable } from "../api";
+import { usePageTab } from "../hooks/usePageTab";
+import { Alert, EmptyState, PageHeader } from "../components/ui/Alert";
+import { Badge } from "../components/ui/Badge";
+import { Button } from "../components/ui/Button";
+import { Card, Surface } from "../components/ui/Surface";
+import { Checkbox, Field, FieldDescription, FieldGroup, FieldLabel } from "../components/ui/Field";
+import { Input } from "../components/ui/Input";
+import { PageTabBar } from "../components/ui/PageTabBar";
+import { objectToRecordFields, RecordCardGrid } from "../components/ui/RecordCardGrid";
+import { truncateParty } from "../lib/utils";
+
+const SUPPLIER_TABS = ["invoices", "proofs", "consent"] as const;
+
+interface ConsentPolicy {
+  contractId?: string;
+  buyer?: string;
+  supplier?: string;
+  masterAgreementId?: string;
+  grantedAt?: string;
+  allowsAssignment?: boolean;
+  [key: string]: unknown;
+}
 
 export function SupplierPage() {
+  const [tab, setTab] = usePageTab(SUPPLIER_TABS, "invoices");
   const [receivables, setReceivables] = useState<SupplierReceivable[]>([]);
   const [proofs, setProofs] = useState<
     Array<{ receivableId: string; amount: string; settlementRef: string }>
   >([]);
-  const [policies, setPolicies] = useState<unknown[]>([]);
+  const [policies, setPolicies] = useState<ConsentPolicy[]>([]);
   const [error, setError] = useState("");
   const [success, setSuccess] = useState("");
   const [proposing, setProposing] = useState(false);
+  const [creatingPolicy, setCreatingPolicy] = useState(false);
   const [postingId, setPostingId] = useState<string | null>(null);
   const [faceValue, setFaceValue] = useState("5000");
   const [currency, setCurrency] = useState("USD");
   const [dueDate, setDueDate] = useState("2026-12-31");
   const [consentGranted, setConsentGranted] = useState(true);
   const [maId, setMaId] = useState("MA-DEMO-001");
+  const [allowsAssignment, setAllowsAssignment] = useState(true);
 
   const refresh = useCallback(async () => {
-    console.log("[meridian-supplier] refresh start");
     try {
       const [r, p, portfolio] = await Promise.all([
         api.getSupplierReceivables(),
         api.getConsentPolicies(),
-        api.getSupplierPortfolio().catch((err) => {
-          console.warn("[meridian-supplier] portfolio fetch failed", err);
-          return { receivables: [], repaymentProofs: [] };
-        }),
+        api.getSupplierPortfolio().catch(() => ({ receivables: [], repaymentProofs: [] })),
       ]);
       setReceivables(r.receivables);
-      setPolicies(p.policies);
+      setPolicies(p.policies as ConsentPolicy[]);
       setProofs(portfolio.repaymentProofs ?? []);
       setError("");
-      console.log("[meridian-supplier] refresh ok", {
-        receivables: r.receivables.length,
-        policies: p.policies.length,
-        proofs: portfolio.repaymentProofs?.length ?? 0,
-      });
     } catch (e) {
-      console.error("[meridian-supplier] refresh failed", e);
       setError(String(e));
     }
   }, []);
@@ -50,18 +66,19 @@ export function SupplierPage() {
 
   async function handlePropose(e: React.FormEvent) {
     e.preventDefault();
-    const payload = { faceValue, currency, dueDate, consentGranted };
-    console.log("[meridian-supplier] proposeInvoice click", payload);
     setProposing(true);
     setError("");
     setSuccess("");
     try {
-      const result = await api.proposeInvoice(payload);
-      console.log("[meridian-supplier] proposeInvoice success", result);
+      const result = await api.proposeInvoice({
+        faceValue,
+        currency,
+        dueDate,
+        consentGranted,
+      });
       setSuccess(`Proposal created — contract ${result.contractId.slice(0, 24)}…`);
       await refresh();
     } catch (err) {
-      console.error("[meridian-supplier] proposeInvoice failed", err);
       setError(String(err));
     } finally {
       setProposing(false);
@@ -70,14 +87,21 @@ export function SupplierPage() {
 
   async function handleConsent(e: React.FormEvent) {
     e.preventDefault();
+    setCreatingPolicy(true);
+    setError("");
+    setSuccess("");
     try {
       await api.createConsentPolicy({
         masterAgreementId: maId,
-        allowsAssignment: true,
+        allowsAssignment,
       });
+      setSuccess(`Standing consent policy registered for ${maId}.`);
+      setMaId(`MA-DEMO-${String(policies.length + 1).padStart(3, "0")}`);
       await refresh();
     } catch (err) {
       setError(String(err));
+    } finally {
+      setCreatingPolicy(false);
     }
   }
 
@@ -94,86 +118,256 @@ export function SupplierPage() {
     }
   }
 
+  const activePolicies = policies.filter((p) => p.allowsAssignment !== false);
+
   return (
-    <div>
-      <h1>Supplier Portal</h1>
-      {error && <p className="error">{error}</p>}
-      {success && <p className="success">{success}</p>}
+    <div className="space-y-6">
+      <PageHeader
+        title="Supplier Portal"
+        description="Issue invoices, manage assignment consent, and post receivables for sealed-bid financing."
+      />
 
-      <h2>Issue Invoice</h2>
-      <form onSubmit={handlePropose}>
-        <label>
-          Face Value
-          <input value={faceValue} onChange={(e) => setFaceValue(e.target.value)} />
-        </label>
-        <label>
-          Currency
-          <input value={currency} onChange={(e) => setCurrency(e.target.value)} />
-        </label>
-        <label>
-          Due Date
-          <input type="date" value={dueDate} onChange={(e) => setDueDate(e.target.value)} />
-        </label>
-        <label>
-          <input
-            type="checkbox"
-            checked={consentGranted}
-            onChange={(e) => setConsentGranted(e.target.checked)}
-          />
-          Grant assignment consent inline
-        </label>
-        <button type="submit" disabled={proposing}>
-          {proposing ? "Proposing…" : "Propose Invoice to Buyer"}
-        </button>
-      </form>
+      {error && <Alert variant="destructive">{error}</Alert>}
+      {success && <Alert variant="success">{success}</Alert>}
 
-      <h2>Standing Consent Policy</h2>
-      <form onSubmit={handleConsent}>
-        <label>
-          Master Agreement ID
-          <input value={maId} onChange={(e) => setMaId(e.target.value)} />
-        </label>
-        <button type="submit" className="secondary">
-          Create Assignment Consent Policy
-        </button>
-      </form>
+      <PageTabBar
+        tabs={[
+          { id: "invoices", label: "Invoices & Receivables", count: receivables.length },
+          { id: "proofs", label: "Repayment Proofs", count: proofs.length },
+          { id: "consent", label: "Assignment Consent", count: policies.length },
+        ]}
+        activeTab={tab}
+        onTabChange={setTab}
+      />
 
-      <h2>Receivables ({receivables.length})</h2>
-      {receivables.map((r) => (
-        <div key={r.contractId} className="card">
-          <strong>{r.receivableId}</strong>{" "}
-          <span className="badge">{r.state}</span>
-          <p>
-            Buyer: {r.buyer.slice(0, 24)}… · {r.faceValue} {r.currency} · due {r.dueDate}
-          </p>
-          <ul>
-            {r.lineItems.map((li, i) => (
-              <li key={i}>
-                {li.description}: {li.quantity} × {li.unitPrice}
-              </li>
-            ))}
-          </ul>
-          {r.state === "Issued" && (
-            <button
-              type="button"
-              onClick={() => handlePostForBid(r.contractId)}
-              disabled={postingId === r.contractId}
-            >
-              {postingId === r.contractId ? "Posting…" : "Post for bid"}
-            </button>
+      {tab === "invoices" && (
+        <div className="space-y-6">
+          <Surface title="Issue Invoice" emphasis>
+            <p className="mb-4 text-sm text-muted-foreground">
+              Propose a receivable to your buyer. You may grant assignment consent inline for this
+              invoice, or rely on a standing policy registered under Assignment Consent.
+            </p>
+            <form onSubmit={handlePropose}>
+              <FieldGroup>
+                <div className="grid gap-4 sm:grid-cols-2">
+                  <Field>
+                    <FieldLabel htmlFor="faceValue">Face Value</FieldLabel>
+                    <Input
+                      id="faceValue"
+                      value={faceValue}
+                      onChange={(e) => setFaceValue(e.target.value)}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="currency">Currency</FieldLabel>
+                    <Input
+                      id="currency"
+                      value={currency}
+                      onChange={(e) => setCurrency(e.target.value)}
+                    />
+                  </Field>
+                  <Field>
+                    <FieldLabel htmlFor="dueDate">Due Date</FieldLabel>
+                    <Input
+                      id="dueDate"
+                      type="date"
+                      value={dueDate}
+                      onChange={(e) => setDueDate(e.target.value)}
+                    />
+                  </Field>
+                </div>
+                <Field>
+                  <label className="flex cursor-pointer items-start gap-2.5 text-sm">
+                    <Checkbox
+                      className="mt-0.5"
+                      checked={consentGranted}
+                      onChange={(e) => setConsentGranted(e.target.checked)}
+                    />
+                    <span>
+                      Grant assignment consent inline on this proposal
+                      <FieldDescription className="mt-1">
+                        One-time consent for this invoice only. For recurring trade, register a
+                        standing policy under Assignment Consent.
+                      </FieldDescription>
+                    </span>
+                  </label>
+                </Field>
+                <Button type="submit" disabled={proposing}>
+                  <Send className="size-4" />
+                  {proposing ? "Proposing…" : "Propose Invoice to Buyer"}
+                </Button>
+              </FieldGroup>
+            </form>
+          </Surface>
+
+          {receivables.length === 0 ? (
+            <EmptyState>No receivables yet — propose an invoice to get started.</EmptyState>
+          ) : (
+            <div className="grid gap-4">
+              {receivables.map((r) => (
+                <Card key={r.contractId}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <FileText className="size-4 text-primary" />
+                        <strong className="font-heading text-foreground">{r.receivableId}</strong>
+                        <Badge>{r.state}</Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Buyer: {truncateParty(r.buyer)} · {r.faceValue} {r.currency} · due{" "}
+                        {r.dueDate}
+                      </p>
+                    </div>
+                    {r.state === "Issued" && (
+                      <Button
+                        type="button"
+                        size="sm"
+                        onClick={() => handlePostForBid(r.contractId)}
+                        disabled={postingId === r.contractId}
+                      >
+                        {postingId === r.contractId ? "Posting…" : "Post for bid"}
+                      </Button>
+                    )}
+                  </div>
+                  {r.lineItems.length > 0 && (
+                    <ul className="mt-3 space-y-1 border-t border-border pt-3 text-sm text-muted-foreground">
+                      {r.lineItems.map((li, i) => (
+                        <li key={i}>
+                          {li.description}: {li.quantity} × {li.unitPrice}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </Card>
+              ))}
+            </div>
           )}
         </div>
-      ))}
+      )}
 
-      <h2>Repayment proofs ({proofs.length})</h2>
-      {proofs.map((p) => (
-        <div key={p.receivableId + p.settlementRef} className="card">
-          <strong>{p.receivableId}</strong> — {p.amount} · ref {p.settlementRef}
+      {tab === "proofs" && (
+        <div>
+          <p className="mb-4 text-sm text-muted-foreground">
+            On-ledger repayment proofs confirm buyer settlement against funded receivables.
+          </p>
+          {proofs.length === 0 ? (
+            <EmptyState>No repayment proofs recorded yet.</EmptyState>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {proofs.map((p) => (
+                <Card key={p.receivableId + p.settlementRef}>
+                  <strong className="text-foreground">{p.receivableId}</strong>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    {p.amount} · ref {p.settlementRef}
+                  </p>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
-      ))}
+      )}
 
-      <h2>Consent Policies ({policies.length})</h2>
-      <pre>{JSON.stringify(policies, null, 2)}</pre>
+      {tab === "consent" && (
+        <div className="space-y-6">
+          <div className="grid gap-4 lg:grid-cols-3">
+            <Card className="flex gap-3 lg:col-span-2">
+              <ShieldCheck className="mt-0.5 size-5 shrink-0 text-primary" />
+              <div>
+                <h3 className="font-heading font-semibold text-foreground">
+                  Standing assignment consent
+                </h3>
+                <p className="mt-2 text-sm leading-relaxed text-muted-foreground">
+                  An on-ledger{" "}
+                  <strong className="font-medium text-foreground">AssignmentConsentPolicy</strong>{" "}
+                  binds your supplier persona to a buyer under a master commercial agreement. It
+                  authorizes receivable assignment to financiers without repeating consent on every
+                  invoice — required before posting receivables for sealed-bid financing.
+                </p>
+              </div>
+            </Card>
+            <Card className="justify-center text-center">
+              <p className="text-3xl font-semibold text-primary">{activePolicies.length}</p>
+              <p className="mt-1 text-sm text-muted-foreground">Active policies on ledger</p>
+            </Card>
+          </div>
+
+          <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.2fr)]">
+            <Surface title="Register Policy" emphasis>
+              <form onSubmit={handleConsent}>
+                <FieldGroup>
+                  <Field>
+                    <FieldLabel htmlFor="maId">Master Agreement ID</FieldLabel>
+                    <Input
+                      id="maId"
+                      value={maId}
+                      onChange={(e) => setMaId(e.target.value)}
+                      placeholder="e.g. MA-ACME-2026"
+                    />
+                    <FieldDescription>
+                      References your commercial framework with the buyer (MSA, supply agreement,
+                      etc.).
+                    </FieldDescription>
+                  </Field>
+                  <Field>
+                    <label className="flex cursor-pointer items-start gap-2.5 text-sm">
+                      <Checkbox
+                        className="mt-0.5"
+                        checked={allowsAssignment}
+                        onChange={(e) => setAllowsAssignment(e.target.checked)}
+                      />
+                      <span>
+                        Allow receivable assignment to financiers
+                        <FieldDescription className="mt-1">
+                          When enabled, financiers can bid on posted receivables covered by this
+                          agreement.
+                        </FieldDescription>
+                      </span>
+                    </label>
+                  </Field>
+                  <Button type="submit" disabled={creatingPolicy} className="w-full">
+                    <Plus className="size-4" />
+                    {creatingPolicy ? "Registering…" : "Register on Ledger"}
+                  </Button>
+                </FieldGroup>
+              </form>
+            </Surface>
+
+            <Surface title="On-Ledger Policies">
+              {policies.length === 0 ? (
+                <EmptyState>
+                  No standing policies yet. Register one to streamline invoice assignment.
+                </EmptyState>
+              ) : (
+                <RecordCardGrid
+                  items={policies.map((policy, index) => {
+                    const fields = objectToRecordFields(policy as Record<string, unknown>);
+                    return {
+                      key: policy.contractId ?? `policy-${index}`,
+                      title: policy.masterAgreementId ?? `Policy ${index + 1}`,
+                      subtitle: policy.grantedAt
+                        ? `Granted ${new Date(policy.grantedAt).toLocaleString()}`
+                        : undefined,
+                      badge: policy.allowsAssignment ? "Assignment allowed" : "No assignment",
+                      fields,
+                    };
+                  })}
+                  dialogTitle="Consent policy"
+                  emptyMessage="No consent policies on record."
+                />
+              )}
+            </Surface>
+          </div>
+
+          <Card className="flex gap-3 border-primary/20 bg-primary/5">
+            <Scale className="mt-0.5 size-4 shrink-0 text-primary" />
+            <p className="text-sm text-muted-foreground">
+              <strong className="text-foreground">Inline vs standing consent:</strong> inline
+              consent on an invoice proposal covers a single receivable; standing policies cover
+              ongoing trade under the same master agreement and are reused across financing rounds.
+            </p>
+          </Card>
+        </div>
+      )}
     </div>
   );
 }

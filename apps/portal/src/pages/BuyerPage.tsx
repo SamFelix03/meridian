@@ -1,7 +1,23 @@
 import { useCallback, useEffect, useState } from "react";
+import { CheckCircle2, CreditCard } from "lucide-react";
 import { api, useNotifications, type BuyerObligation, type ReceivableProposal } from "../api";
+import { usePageTab } from "../hooks/usePageTab";
+import { Alert, EmptyState, PageHeader } from "../components/ui/Alert";
+import { Button } from "../components/ui/Button";
+import { Card } from "../components/ui/Surface";
+import { PageTabBar } from "../components/ui/PageTabBar";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/Table";
+import { truncateParty } from "../lib/utils";
 
 export function BuyerPage() {
+  const [tab, setTab] = usePageTab(["cosign", "obligations"] as const, "cosign");
   const [obligations, setObligations] = useState<BuyerObligation[]>([]);
   const [proposals, setProposals] = useState<ReceivableProposal[]>([]);
   const [error, setError] = useState("");
@@ -48,54 +64,94 @@ export function BuyerPage() {
   }
 
   return (
-    <div>
-      <h1>Buyer Portal</h1>
-      <p>IBuyerView only — payee, amount, due date. No line items or supplier economics.</p>
-      {error && <p className="error">{error}</p>}
+    <div className="space-y-6">
+      <PageHeader
+        title="Buyer Portal"
+        description="IBuyerView only — payee, amount, due date. No line items or supplier economics."
+      />
 
-      <h2>Pending Co-Signature ({proposals.length})</h2>
-      {proposals.map((p) => (
-        <div key={p.contractId} className="card">
-          <strong>{p.proposalId}</strong>
-          <p>
-            {p.faceValue} {p.currency} · due {p.dueDate}
-          </p>
-          <button onClick={() => cosign(p.contractId)}>Co-Sign &amp; Issue</button>
+      {error && <Alert variant="destructive">{error}</Alert>}
+
+      <PageTabBar
+        tabs={[
+          { id: "cosign", label: "Pending Co-Signature", count: proposals.length },
+          { id: "obligations", label: "Obligations", count: obligations.length },
+        ]}
+        activeTab={tab}
+        onTabChange={setTab}
+      />
+
+      {tab === "cosign" && (
+        <div>
+          {proposals.length === 0 ? (
+            <EmptyState>No proposals awaiting co-signature.</EmptyState>
+          ) : (
+            <div className="grid gap-4 sm:grid-cols-2">
+              {proposals.map((p) => (
+                <Card key={p.contractId}>
+                  <div className="space-y-3">
+                    <div>
+                      <strong className="font-heading text-foreground">{p.proposalId}</strong>
+                      <p className="mt-1 text-sm text-muted-foreground">
+                        {p.faceValue} {p.currency} · due {p.dueDate}
+                      </p>
+                    </div>
+                    <Button type="button" size="sm" onClick={() => cosign(p.contractId)}>
+                      <CheckCircle2 className="size-4" />
+                      Co-Sign &amp; Issue
+                    </Button>
+                  </div>
+                </Card>
+              ))}
+            </div>
+          )}
         </div>
-      ))}
+      )}
 
-      <h2>Obligations Dashboard ({obligations.length})</h2>
-      <table>
-        <thead>
-          <tr>
-            <th>Invoice</th>
-            <th>Payee</th>
-            <th>Amount</th>
-            <th>Due Date</th>
-            <th>Action</th>
-          </tr>
-        </thead>
-        <tbody>
-          {obligations.map((o) => (
-            <tr key={o.contractId}>
-              <td>{o.receivableId}</td>
-              <td>{o.payee.slice(0, 20)}…</td>
-              <td>
-                {o.faceValue} {o.currency}
-              </td>
-              <td>{o.dueDate}</td>
-              <td>
-                {(o.state === "Funded" ||
-                  o.state === "PartiallySyndicated" ||
-                  o.state === "Overdue" ||
-                  !o.state) && (
-                  <button onClick={() => repay(o)}>Repay obligation</button>
-                )}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+      {tab === "obligations" && (
+        <div>
+          {obligations.length === 0 ? (
+            <EmptyState>No outstanding obligations.</EmptyState>
+          ) : (
+            <Card className="overflow-hidden p-0">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Invoice</TableHead>
+                    <TableHead>Payee</TableHead>
+                    <TableHead>Amount</TableHead>
+                    <TableHead>Due Date</TableHead>
+                    <TableHead>Action</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {obligations.map((o) => (
+                    <TableRow key={o.contractId}>
+                      <TableCell className="font-medium">{o.receivableId}</TableCell>
+                      <TableCell>{truncateParty(o.payee, 20)}</TableCell>
+                      <TableCell>
+                        {o.faceValue} {o.currency}
+                      </TableCell>
+                      <TableCell>{o.dueDate}</TableCell>
+                      <TableCell>
+                        {(o.state === "Funded" ||
+                          o.state === "PartiallySyndicated" ||
+                          o.state === "Overdue" ||
+                          !o.state) && (
+                          <Button type="button" size="sm" onClick={() => repay(o)}>
+                            <CreditCard className="size-3.5" />
+                            Repay obligation
+                          </Button>
+                        )}
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Card>
+          )}
+        </div>
+      )}
     </div>
   );
 }

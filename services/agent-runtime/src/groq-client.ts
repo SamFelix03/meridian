@@ -21,6 +21,8 @@ export async function requestGroqBidDecision(params: {
     "Respond with strict JSON only — no markdown.",
     'Schema: {"advanceAmount":"decimal string","discountRate":"decimal string","shouldBid":boolean,"rationale":"string"}',
     "advanceAmount is the cash advance offered to the supplier.",
+    "advanceAmount MUST NOT exceed the invoice faceValue (same currency).",
+    "advanceAmount MUST NOT exceed mandate maxExposure.",
     "discountRate is the financier discount rate as a decimal (e.g. 0.05 for 5%).",
     "Only bid when economics are attractive within mandate limits.",
   ].join(" ");
@@ -33,6 +35,8 @@ export async function requestGroqBidDecision(params: {
       pricingBandMin: invitation.pricingBandMin,
       pricingBandMax: invitation.pricingBandMax,
       roundState: invitation.roundState,
+      faceValue: invitation.faceValue,
+      currency: invitation.currency,
     },
     mandate: {
       mandateId: mandate.mandateId,

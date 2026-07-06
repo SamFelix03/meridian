@@ -4,9 +4,15 @@ import {
   extractCreatedContractId,
   LedgerClientError,
   oracleAnchoredMode,
+  packageIdFromTemplateId,
+  pickMandateForRequestPackage,
+  resolveFinancingRequestTemplateId,
+  resolveMandateTemplateMap,
+  isLegacyFinancingRequestPackage,
   type JsonLedgerClient,
 } from "@meridian/ledger-client";
 import { requestGroqBidDecision } from "./groq-client.js";
+import { capAdvanceAmount } from "./bid-sizing.js";
 import type {
   AgentBidDecision,
   AgentLoopConfig,
@@ -69,9 +75,11 @@ export class AgentLoop {
     this.ticking = true;
     const started = Date.now();
     const decisions: AgentBidDecision[] = [];
+    console.log("[agent-runtime] tick start");
 
     try {
-      const [{ invitations }, { mandates }, oracle] = await Promise.all([
+      const [{ invitations: rawInvitations }, { mandates }, oracle, { receivables }] =
+        await Promise.all([
         fetchJson<{ invitations: FinancierInvitation[] }>(
           `${this.config.financierIndexerUrl}/financier/invitations`
         ),
@@ -79,12 +87,39 @@ export class AgentLoop {
           `${this.config.financierIndexerUrl}/financier/mandates`
         ),
         fetchJson<FetchResult>(`${this.config.oracleRelayUrl}/feeds/latest`),
+        fetchJson<{ receivables: Array<{ contractId: string; faceValue: string; currency: string }> }>(
+          `${this.config.supplierIndexerUrl}/supplier/receivables`
+        ),
       ]);
 
-      const mandate = pickActiveMandate(mandates);
-      if (!mandate) {
+      const receivableByCid = new Map(receivables.map((r) => [r.contractId, r]));
+      const invitations = rawInvitations.map((inv) => {
+        const recv = inv.receivableCid ? receivableByCid.get(inv.receivableCid) : undefined;
+        return {
+          ...inv,
+          faceValue: recv?.faceValue ?? inv.faceValue ?? "",
+          currency: recv?.currency ?? inv.currency ?? "USD",
+        };
+      });
+
+      const activeMandates = mandates.filter((m) => !m.revoked);
+      if (activeMandates.length === 0) {
+        throw new Error("no bidding mandate found — create one on Financier tab");
+      }
+
+      const mandateTemplateByCid = await resolveMandateTemplateMap(
+        client,
+        this.config.financierPartyId,
+        activeMandates.map((m) => m.contractId)
+      );
+
+      const defaultMandate = pickActiveMandate(mandates);
+      if (!defaultMandate) {
         throw new Error("no active agent-enabled bidding mandate found");
       }
+      console.log(
+        `[agent-runtime] defaultMandate=${defaultMandate.mandateId} maxExposure=${defaultMandate.maxExposure} invitations=${invitations.length} oracleFresh=${oracle.isFresh}`
+      );
 
       const { bids: myBids } = await fetchJson<{ bids: BidSummary[] }>(
         `${this.config.financierIndexerUrl}/financier/my-bids`
@@ -100,6 +135,8 @@ export class AgentLoop {
         if (!invitationOpen(inv)) continue;
         if (bidRequestIds.has(inv.requestId)) continue;
 
+        console.log(`[agent-runtime] evaluating ${inv.requestId} (${inv.roundState})`);
+
         const decision: AgentBidDecision = {
           requestId: inv.requestId,
           requestContractId: inv.contractId,
@@ -111,12 +148,41 @@ export class AgentLoop {
         };
 
         try {
+          const requestTemplateId = await resolveFinancingRequestTemplateId(
+            client,
+            [this.config.financierPartyId, inv.supplier],
+            inv.contractId
+          );
+          const legacy = isLegacyFinancingRequestPackage(requestTemplateId);
+          const requestPkg = packageIdFromTemplateId(requestTemplateId);
+
+          let mandateForBid = defaultMandate;
+          if (!legacy) {
+            const matched = pickMandateForRequestPackage(
+              activeMandates,
+              mandateTemplateByCid,
+              requestTemplateId
+            );
+            if (!matched) {
+              decision.ledgerError = `no mandate matching round package ${requestPkg.slice(0, 12)}… — create a new mandate on Financier tab (old v5 mandates cannot agent-bid on v6 rounds)`;
+              console.warn(`[agent-runtime] ${inv.requestId} skipped: ${decision.ledgerError}`);
+              decisions.push(decision);
+              continue;
+            }
+            mandateForBid =
+              activeMandates.find((m) => m.contractId === matched.mandate.contractId) ??
+              defaultMandate;
+            console.log(
+              `[agent-runtime] ${inv.requestId} using mandate ${mandateForBid.mandateId} package=${requestPkg.slice(0, 12)}…`
+            );
+          }
+
           let proposal: GroqBidProposal;
           if (this.config.adversarialMode) {
             proposal = {
               shouldBid: true,
-              advanceAmount: mandate.maxExposure,
-              discountRate: mandate.minSpread,
+              advanceAmount: mandateForBid.maxExposure,
+              discountRate: mandateForBid.minSpread,
               rationale: "adversarial mode: deliberate out-of-mandate bid",
             };
           } else {
@@ -125,7 +191,7 @@ export class AgentLoop {
               model: this.config.groqModel,
               context: {
                 invitation: inv,
-                mandate,
+                mandate: mandateForBid,
                 sofrRate,
                 oracleFresh: oracle.isFresh,
               },
@@ -138,19 +204,31 @@ export class AgentLoop {
           decision.rationale = proposal.rationale;
 
           if (!proposal.shouldBid) {
+            console.log(`[agent-runtime] ${inv.requestId} Groq: no bid — ${proposal.rationale}`);
             decisions.push(decision);
             continue;
           }
 
-          let advanceAmount = proposal.advanceAmount;
+          let advanceAmount = capAdvanceAmount(
+            proposal.advanceAmount,
+            inv.faceValue,
+            mandateForBid.maxExposure
+          );
+          if (advanceAmount !== proposal.advanceAmount) {
+            decision.rationale = `${proposal.rationale} [capped advance ${proposal.advanceAmount} → ${advanceAmount} vs face ${inv.faceValue}]`;
+          }
+
           if (this.config.adversarialMode) {
-            advanceAmount = inflateForAdversarial(advanceAmount, mandate.maxExposure);
+            advanceAmount = inflateForAdversarial(advanceAmount, mandateForBid.maxExposure);
             decision.advanceAmount = advanceAmount;
-            decision.rationale = `${proposal.rationale} [adversarial: inflated advance]`;
+            decision.rationale = `${decision.rationale || proposal.rationale} [adversarial: inflated advance]`;
+          } else {
+            decision.advanceAmount = advanceAmount;
           }
 
           const cmd = buildSubmitBidCommand({
             requestContractId: inv.contractId,
+            requestTemplateId,
             financier: this.config.financierPartyId,
             advanceAmount,
             discountRate: proposal.discountRate,
@@ -158,8 +236,8 @@ export class AgentLoop {
             redstoneTimestampMs: oracle.packageTimestampMs,
             mode,
             ledgerTime,
-            viaAgent: true,
-            mandateContractId: mandate.contractId,
+            viaAgent: !legacy,
+            mandateContractId: legacy ? null : mandateForBid.contractId,
           });
 
           const result = await client.submitAndWaitForTransaction({
@@ -169,9 +247,13 @@ export class AgentLoop {
 
           decision.submitted = true;
           decision.bidContractId = extractCreatedContractId(result, "Bid") ?? undefined;
+          console.log(
+            `[agent-runtime] ${inv.requestId} bid submitted advance=${advanceAmount} rate=${proposal.discountRate} cid=${decision.bidContractId?.slice(0, 16) ?? "?"}…`
+          );
         } catch (err) {
           const message = err instanceof Error ? err.message : String(err);
           decision.ledgerError = message;
+          console.error(`[agent-runtime] ${inv.requestId} submit failed:`, message);
           if (!(err instanceof LedgerClientError)) {
             decision.rationale = decision.rationale || message;
           }
@@ -187,6 +269,10 @@ export class AgentLoop {
         lastError: null,
         decisions,
       };
+      const submitted = decisions.filter((d) => d.submitted).length;
+      console.log(
+        `[agent-runtime] tick done ${Date.now() - started}ms decisions=${decisions.length} submitted=${submitted}`
+      );
       return this.status;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);

@@ -3,6 +3,31 @@ import { randomUUID } from "node:crypto";
 /** Package-name template reference (works after DAR upload). */
 export const RECEIVABLE_PACKAGE = "com-meridian-receivable-v6";
 export const CASH_PACKAGE = "com-meridian-cash";
+
+/** Older DevNet contracts may still reference earlier receivable package names. */
+export const RECEIVABLE_PACKAGE_VERSIONS = [
+  "com-meridian-receivable-v6",
+  "com-meridian-receivable-v5",
+  "com-meridian-receivable-v4",
+  "com-meridian-receivable-v3",
+  "com-meridian-receivable-v2",
+] as const;
+
+function receivableTemplateRefs(entity: string): string[] {
+  return RECEIVABLE_PACKAGE_VERSIONS.map((pkg) => `#${pkg}:${entity}`);
+}
+
+export const FINANCING_REQUEST_TEMPLATE_CANDIDATES = receivableTemplateRefs(
+  "Meridian.Financing.FinancingRequest:FinancingRequest"
+);
+
+export const BID_TEMPLATE_CANDIDATES = receivableTemplateRefs(
+  "Meridian.Financing.Bid:Bid"
+);
+
+export const BIDDING_MANDATE_TEMPLATE_CANDIDATES = receivableTemplateRefs(
+  "Meridian.Financing.BiddingMandate:BiddingMandate"
+);
 export const SPLICE_ALLOCATION_FACTORY_INTERFACE =
   "#splice-api-token-allocation-instruction-v1:Splice.Api.Token.AllocationInstructionV1:AllocationFactory";
 
@@ -113,6 +138,8 @@ export interface OpenFinancingRoundArgs {
 
 export interface SubmitBidArgs {
   requestContractId: string;
+  /** When omitted, defaults to latest package — set from on-ledger contract for mixed-version DevNet. */
+  requestTemplateId?: string;
   financier: string;
   advanceAmount: string;
   discountRate: string;
@@ -136,6 +163,7 @@ export interface CreateBiddingMandateArgs {
 
 export interface UpdateMandateConstraintsArgs {
   mandateContractId: string;
+  mandateTemplateId?: string;
   maxExposure: string;
   minSpread: string;
   eligibleSuppliers: string[];
@@ -143,11 +171,13 @@ export interface UpdateMandateConstraintsArgs {
 
 export interface SetMandateAgentEnabledArgs {
   mandateContractId: string;
+  mandateTemplateId?: string;
   enabled: boolean;
 }
 
 export interface RevokeMandateArgs {
   mandateContractId: string;
+  mandateTemplateId?: string;
 }
 
 export type SettlementFinalityArg = "Atomic" | "ReassignmentMediated" | "EscrowFallback";
@@ -177,6 +207,7 @@ export interface RevokeRegulatorJurisdictionGrantArgs {
 
 export interface AwardBidArgs {
   requestContractId: string;
+  requestTemplateId?: string;
   winningBidCid: string;
   settlementAllocationCid: string;
   expectedAdvance: string;
@@ -255,6 +286,7 @@ export interface ReplaceBidArgs extends SubmitBidArgs {}
 
 export interface ExpireRoundArgs {
   requestContractId: string;
+  requestTemplateId?: string;
 }
 
 export type LedgerCommand =
@@ -425,7 +457,7 @@ export function buildCreateBiddingMandateCommand(
 export function buildRevokeMandateCommand(args: RevokeMandateArgs): LedgerCommand {
   return {
     ExerciseCommand: {
-      templateId: TEMPLATE_IDS.biddingMandate,
+      templateId: args.mandateTemplateId ?? TEMPLATE_IDS.biddingMandate,
       contractId: args.mandateContractId,
       choice: "Revoke",
       choiceArgument: {},
@@ -438,7 +470,7 @@ export function buildUpdateMandateCommand(
 ): LedgerCommand {
   return {
     ExerciseCommand: {
-      templateId: TEMPLATE_IDS.biddingMandate,
+      templateId: args.mandateTemplateId ?? TEMPLATE_IDS.biddingMandate,
       contractId: args.mandateContractId,
       choice: "UpdateConstraints",
       choiceArgument: {
@@ -455,7 +487,7 @@ export function buildSetMandateAgentEnabledCommand(
 ): LedgerCommand {
   return {
     ExerciseCommand: {
-      templateId: TEMPLATE_IDS.biddingMandate,
+      templateId: args.mandateTemplateId ?? TEMPLATE_IDS.biddingMandate,
       contractId: args.mandateContractId,
       choice: "SetAgentEnabled",
       choiceArgument: { enabled: args.enabled },
@@ -463,24 +495,46 @@ export function buildSetMandateAgentEnabledCommand(
   };
 }
 
+/** v2 DevNet contracts omit viaAgent/mandateCid on SubmitBid; all newer packages require them. */
+const LEGACY_FINANCING_REQUEST_PACKAGES = [
+  "com-meridian-receivable-v2",
+  // package-id hash for com-meridian-receivable-v2 on DevNet
+  "f467fee09c1c9a7e5e893625391884b9f0c57b12ab3f55d95539a42b0aeccf21",
+] as const;
+
+export function isLegacyFinancingRequestPackage(requestTemplateId?: string): boolean {
+  if (!requestTemplateId) return false;
+  const id = requestTemplateId.toLowerCase();
+  return LEGACY_FINANCING_REQUEST_PACKAGES.some((legacy) => id.includes(legacy.toLowerCase()));
+}
+
+/** @deprecated use !isLegacyFinancingRequestPackage */
+export function financingRequestSupportsAgentFields(requestTemplateId?: string): boolean {
+  return !isLegacyFinancingRequestPackage(requestTemplateId);
+}
+
 export function buildSubmitBidCommand(args: SubmitBidArgs): LedgerCommand {
   const viaAgent = args.viaAgent ?? false;
+  const legacy = isLegacyFinancingRequestPackage(args.requestTemplateId);
+  const choiceArgument: Record<string, unknown> = {
+    financier: args.financier,
+    advanceAmount: args.advanceAmount,
+    discountRate: args.discountRate,
+    redstonePayload: args.redstonePayload,
+    redstoneTimestampMs: String(args.redstoneTimestampMs),
+    mode: args.mode,
+    ledgerTime: args.ledgerTime,
+  };
+  if (!legacy) {
+    choiceArgument.viaAgent = viaAgent;
+    choiceArgument.mandateCid = viaAgent ? (args.mandateContractId ?? null) : null;
+  }
   return {
     ExerciseCommand: {
-      templateId: TEMPLATE_IDS.financingRequest,
+      templateId: args.requestTemplateId ?? TEMPLATE_IDS.financingRequest,
       contractId: args.requestContractId,
       choice: "SubmitBid",
-      choiceArgument: {
-        financier: args.financier,
-        advanceAmount: args.advanceAmount,
-        discountRate: args.discountRate,
-        redstonePayload: args.redstonePayload,
-        redstoneTimestampMs: String(args.redstoneTimestampMs),
-        mode: args.mode,
-        ledgerTime: args.ledgerTime,
-        viaAgent,
-        mandateCid: viaAgent ? (args.mandateContractId ?? null) : null,
-      },
+      choiceArgument,
     },
   };
 }
@@ -488,7 +542,7 @@ export function buildSubmitBidCommand(args: SubmitBidArgs): LedgerCommand {
 export function buildAwardBidCommand(args: AwardBidArgs): LedgerCommand {
   return {
     ExerciseCommand: {
-      templateId: TEMPLATE_IDS.financingRequest,
+      templateId: args.requestTemplateId ?? TEMPLATE_IDS.financingRequest,
       contractId: args.requestContractId,
       choice: "AwardBid",
       choiceArgument: {
@@ -779,10 +833,13 @@ export function buildMarkOverdueCommand(args: MarkOverdueArgs): LedgerCommand {
   };
 }
 
-export function buildPauseRoundCommand(requestContractId: string): LedgerCommand {
+export function buildPauseRoundCommand(
+  requestContractId: string,
+  requestTemplateId?: string
+): LedgerCommand {
   return {
     ExerciseCommand: {
-      templateId: TEMPLATE_IDS.financingRequest,
+      templateId: requestTemplateId ?? TEMPLATE_IDS.financingRequest,
       contractId: requestContractId,
       choice: "PauseRound",
       choiceArgument: {},
@@ -791,11 +848,12 @@ export function buildPauseRoundCommand(requestContractId: string): LedgerCommand
 }
 
 export function buildEnterStaticFallbackCommand(
-  requestContractId: string
+  requestContractId: string,
+  requestTemplateId?: string
 ): LedgerCommand {
   return {
     ExerciseCommand: {
-      templateId: TEMPLATE_IDS.financingRequest,
+      templateId: requestTemplateId ?? TEMPLATE_IDS.financingRequest,
       contractId: requestContractId,
       choice: "EnterStaticReferenceFallback",
       choiceArgument: {},
@@ -805,22 +863,26 @@ export function buildEnterStaticFallbackCommand(
 
 export function buildReplaceBidCommand(args: ReplaceBidArgs): LedgerCommand {
   const viaAgent = args.viaAgent ?? false;
+  const legacy = isLegacyFinancingRequestPackage(args.requestTemplateId);
+  const choiceArgument: Record<string, unknown> = {
+    financier: args.financier,
+    advanceAmount: args.advanceAmount,
+    discountRate: args.discountRate,
+    redstonePayload: args.redstonePayload,
+    redstoneTimestampMs: String(args.redstoneTimestampMs),
+    mode: args.mode,
+    ledgerTime: args.ledgerTime,
+  };
+  if (!legacy) {
+    choiceArgument.viaAgent = viaAgent;
+    choiceArgument.mandateCid = viaAgent ? (args.mandateContractId ?? null) : null;
+  }
   return {
     ExerciseCommand: {
-      templateId: TEMPLATE_IDS.financingRequest,
+      templateId: args.requestTemplateId ?? TEMPLATE_IDS.financingRequest,
       contractId: args.requestContractId,
       choice: "ReplaceBid",
-      choiceArgument: {
-        financier: args.financier,
-        advanceAmount: args.advanceAmount,
-        discountRate: args.discountRate,
-        redstonePayload: args.redstonePayload,
-        redstoneTimestampMs: String(args.redstoneTimestampMs),
-        mode: args.mode,
-        ledgerTime: args.ledgerTime,
-        viaAgent,
-        mandateCid: viaAgent ? (args.mandateContractId ?? null) : null,
-      },
+      choiceArgument,
     },
   };
 }
@@ -828,7 +890,7 @@ export function buildReplaceBidCommand(args: ReplaceBidArgs): LedgerCommand {
 export function buildExpireRoundCommand(args: ExpireRoundArgs): LedgerCommand {
   return {
     ExerciseCommand: {
-      templateId: TEMPLATE_IDS.financingRequest,
+      templateId: args.requestTemplateId ?? TEMPLATE_IDS.financingRequest,
       contractId: args.requestContractId,
       choice: "ExpireRound",
       choiceArgument: {},

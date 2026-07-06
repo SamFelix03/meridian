@@ -18,6 +18,87 @@ import type {
 } from "@meridian/shared-types";
 
 const API = import.meta.env.VITE_API_URL ?? "/api";
+const API_DEBUG =
+  import.meta.env.DEV || import.meta.env.VITE_API_DEBUG === "1";
+
+function apiDebugLog(message: string, detail?: unknown): void {
+  if (!API_DEBUG) return;
+  if (detail !== undefined) {
+    console.log(`[meridian-api] ${message}`, detail);
+  } else {
+    console.log(`[meridian-api] ${message}`);
+  }
+}
+
+function apiDebugError(message: string, detail?: unknown): void {
+  if (!API_DEBUG) return;
+  if (detail !== undefined) {
+    console.error(`[meridian-api] ${message}`, detail);
+  } else {
+    console.error(`[meridian-api] ${message}`);
+  }
+}
+
+if (API_DEBUG) {
+  apiDebugLog(`API base URL: ${API}`);
+}
+
+/** Browser-console logging for agent runtime (dev / VITE_API_DEBUG=1). */
+export function logAgent(message: string, detail?: unknown): void {
+  if (!API_DEBUG) return;
+  if (detail !== undefined) {
+    console.log(`[meridian-agent] ${message}`, detail);
+  } else {
+    console.log(`[meridian-agent] ${message}`);
+  }
+}
+
+export function logAgentError(message: string, detail?: unknown): void {
+  if (!API_DEBUG) return;
+  if (detail !== undefined) {
+    console.error(`[meridian-agent] ${message}`, detail);
+  } else {
+    console.error(`[meridian-agent] ${message}`);
+  }
+}
+
+export function logAgentStatus(label: string, status: AgentRunStatus | null): void {
+  if (!API_DEBUG) return;
+  if (!status) {
+    logAgentError(`${label}: no status returned`);
+    return;
+  }
+  const runtimeOnline = status.groqModel !== "unavailable";
+  logAgent(`${label}`, {
+    runtimeOnline,
+    groqModel: status.groqModel,
+    lastTickAt: status.lastTickAt,
+    lastTickDurationMs: status.lastTickDurationMs,
+    lastError: status.lastError,
+    decisionCount: status.decisions.length,
+  });
+  if (status.lastError) {
+    logAgentError("lastError", status.lastError);
+  }
+  if (status.decisions.length > 0) {
+    console.table(
+      status.decisions.map((d) => ({
+        round: d.requestId,
+        shouldBid: d.shouldBid,
+        advance: d.advanceAmount,
+        rate: d.discountRate,
+        submitted: d.submitted,
+        bidCid: d.bidContractId?.slice(0, 16) ?? "",
+        error: d.ledgerError?.slice(0, 80) ?? "",
+        rationale: d.rationale?.slice(0, 80) ?? "",
+      }))
+    );
+  }
+}
+
+export function isAgentRuntimeOnline(status: AgentRunStatus | null): boolean {
+  return status != null && status.groqModel !== "unavailable";
+}
 
 export interface BuyerObligation {
   contractId: string;
@@ -53,12 +134,15 @@ export interface SupplierReceivable {
 export interface FinancierInvitation {
   contractId: string;
   requestId: string;
+  receivableCid?: string;
   supplier: string;
   deadline: string;
   pricingBandMin: string;
   pricingBandMax: string;
   roundState: RoundState;
   creditProfileStub: string;
+  faceValue?: string;
+  currency?: string;
 }
 
 export type {
@@ -74,15 +158,41 @@ export type {
 };
 
 async function fetchJson<T>(path: string, init?: RequestInit): Promise<T> {
-  const res = await fetch(`${API}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
-  if (!res.ok) {
-    const err = await res.text();
-    throw new Error(err || res.statusText);
+  const method = init?.method ?? "GET";
+  const url = `${API}${path}`;
+  const started = performance.now();
+  apiDebugLog(`→ ${method} ${path}`, init?.body ?? null);
+
+  let res: Response;
+  try {
+    res = await fetch(url, {
+      headers: { "Content-Type": "application/json" },
+      ...init,
+    });
+  } catch (err) {
+    apiDebugError(
+      `✗ ${method} ${path} network error (${Math.round(performance.now() - started)}ms)`,
+      err
+    );
+    throw err;
   }
-  return res.json() as Promise<T>;
+
+  const elapsed = Math.round(performance.now() - started);
+  if (!res.ok) {
+    const errText = await res.text();
+    let parsed: unknown = errText;
+    try {
+      parsed = JSON.parse(errText);
+    } catch {
+      // keep raw text
+    }
+    apiDebugError(`✗ ${method} ${path} ${res.status} (${elapsed}ms)`, parsed);
+    throw new Error(errText || res.statusText);
+  }
+
+  const data = (await res.json()) as T;
+  apiDebugLog(`✓ ${method} ${path} ${res.status} (${elapsed}ms)`, data);
+  return data;
 }
 
 export const api = {
@@ -105,6 +215,11 @@ export const api = {
     fetchJson<{ receivableContractId: string; proofContractId?: string }>(
       `/receivables/${encodeURIComponent(receivableContractId)}/repay`,
       { method: "POST", body: JSON.stringify(body) }
+    ),
+  postReceivableForBid: (receivableContractId: string) =>
+    fetchJson<{ receivableContractId: string; transaction?: string }>(
+      `/receivables/${encodeURIComponent(receivableContractId)}/post-for-bid`,
+      { method: "POST", body: JSON.stringify({}) }
     ),
   getSupplierPortfolio: () =>
     fetchJson<{
@@ -199,9 +314,23 @@ export const api = {
       `/financier/mandates/${encodeURIComponent(mandateContractId)}`,
       { method: "PATCH", body: JSON.stringify(body) }
     ),
-  getAgentStatus: () => fetchJson<AgentRunStatus>("/financier/agent/status"),
-  triggerAgentTick: () =>
-    fetchJson<AgentRunStatus>("/financier/agent/tick", { method: "POST", body: "{}" }),
+  getAgentStatus: async () => {
+    logAgent("fetching agent status…");
+    const status = await fetchJson<AgentRunStatus>("/financier/agent/status");
+    logAgentStatus("agent status", status);
+    return status;
+  },
+  triggerAgentTick: async () => {
+    logAgent("triggering agent tick (Groq + on-ledger bids)…");
+    const started = performance.now();
+    const status = await fetchJson<AgentRunStatus>("/financier/agent/tick", {
+      method: "POST",
+      body: "{}",
+    });
+    logAgent(`tick finished in ${Math.round(performance.now() - started)}ms`);
+    logAgentStatus("tick result", status);
+    return status;
+  },
   submitFinancingBid: (
     requestContractId: string,
     body: { advanceAmount: string; discountRate: string; useStaticReference?: boolean }
@@ -336,8 +465,17 @@ export const api = {
 export function useNotifications(orgId: string, onEvent: () => void): void {
   const wsUrl = import.meta.env.VITE_NOTIFICATIONS_WS ?? "ws://127.0.0.1:4020";
   useEffect(() => {
-    const ws = new WebSocket(`${wsUrl}/events?orgId=${encodeURIComponent(orgId)}`);
-    ws.onmessage = () => onEvent();
+    const wsTarget = `${wsUrl}/events?orgId=${encodeURIComponent(orgId)}`;
+    apiDebugLog(`WebSocket connect ${wsTarget}`);
+    const ws = new WebSocket(wsTarget);
+    ws.onopen = () => apiDebugLog(`WebSocket open org=${orgId}`);
+    ws.onmessage = () => {
+      apiDebugLog(`WebSocket event org=${orgId}`);
+      onEvent();
+    };
+    ws.onerror = (ev) => apiDebugError(`WebSocket error org=${orgId}`, ev);
+    ws.onclose = (ev) =>
+      apiDebugLog(`WebSocket closed org=${orgId} code=${ev.code} reason=${ev.reason || "(none)"}`);
     return () => ws.close();
   }, [orgId, onEvent]);
 }

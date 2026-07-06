@@ -3,10 +3,11 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { config as loadDotenv } from "dotenv";
 import { DevNetAuthClient } from "@meridian/devnet-auth";
-import type { FetchResult } from "@meridian/shared-types";
+import type { AgentRunStatus, FetchResult } from "@meridian/shared-types";
 import {
   buildCreateReceivableProposalCommand,
   buildCoSignAndIssueCommand,
+  buildPostForBidCommand,
   buildCreateConsentPolicyCommand,
   buildCreateFinancingFactoryCommand,
   buildOpenFinancingRoundCommand,
@@ -45,6 +46,9 @@ import {
   inlineConsent,
   TEMPLATE_IDS,
   INTERFACE_IDS,
+  resolveFinancingRequestTemplateId,
+  resolveBiddingMandateTemplateId,
+  BID_TEMPLATE_CANDIDATES,
 } from "@meridian/ledger-client";
 import {
   defaultManifestPath,
@@ -157,6 +161,60 @@ async function fetchReceivablePayload(
   );
   const row = rows.find((r) => r.contractId === receivableCid);
   return (row?.payload as Record<string, unknown> | undefined) ?? null;
+}
+
+async function fetchBidPayload(
+  client: Awaited<ReturnType<DevNetAuthClient["createAuthenticatedLedgerClient"]>>,
+  parties: Awaited<ReturnType<typeof loadPortalParties>>,
+  bidCid: string
+): Promise<{ advanceAmount: string; financier: string } | null> {
+  const partyIds = [
+    parties.financierA.partyId,
+    parties.financierB.partyId,
+    parties.supplier.partyId,
+  ];
+  for (const partyId of partyIds) {
+    for (const templateId of BID_TEMPLATE_CANDIDATES) {
+      const rows = await client.getActiveContractsByTemplate(partyId, templateId);
+      const row = rows.find((r) => r.contractId === bidCid);
+      if (!row) continue;
+      const payload = row.payload as Record<string, unknown>;
+      return {
+        advanceAmount: String(payload.advanceAmount ?? ""),
+        financier: String(payload.financier ?? ""),
+      };
+    }
+  }
+  return null;
+}
+
+function financingRequestParties(
+  parties: Awaited<ReturnType<typeof loadPortalParties>>
+): string[] {
+  return [
+    parties.supplier.partyId,
+    parties.financierA.partyId,
+    parties.financierB.partyId,
+  ];
+}
+
+function unavailableAgentStatus(reason: string): AgentRunStatus {
+  return {
+    lastTickAt: null,
+    lastTickDurationMs: null,
+    lastError: reason,
+    adversarialMode: false,
+    decisions: [],
+    groqModel: "unavailable",
+  };
+}
+
+async function proxyAgentRuntime(path: string, init?: RequestInit): Promise<Response | null> {
+  try {
+    return await fetch(`${AGENT_RUNTIME}${path}`, init);
+  } catch {
+    return null;
+  }
 }
 
 async function resolveSyndicationOfferingCid(
@@ -285,8 +343,32 @@ async function handleRequest(
     }
 
     if (req.method === "GET" && url.pathname === "/financier/invitations") {
-      const data = await proxyGet(`${FINANCIER_INDEXER}/financier/invitations`);
-      json(res, 200, data);
+      const [invData, recvData] = await Promise.all([
+        proxyGet(`${FINANCIER_INDEXER}/financier/invitations`) as Promise<{
+          invitations: Array<{
+            receivableCid?: string;
+            faceValue?: string;
+            currency?: string;
+            [key: string]: unknown;
+          }>;
+        }>,
+        proxyGet(`${SUPPLIER_INDEXER}/supplier/receivables`) as Promise<{
+          receivables: Array<{ contractId: string; faceValue: string; currency: string }>;
+        }>,
+      ]);
+      const receivableByCid = new Map(
+        (recvData.receivables ?? []).map((r) => [r.contractId, r])
+      );
+      const invitations = (invData.invitations ?? []).map((inv) => {
+        const recv =
+          inv.receivableCid != null ? receivableByCid.get(inv.receivableCid) : undefined;
+        return {
+          ...inv,
+          faceValue: recv?.faceValue ?? inv.faceValue ?? "",
+          currency: recv?.currency ?? inv.currency ?? "USD",
+        };
+      });
+      json(res, 200, { invitations });
       return;
     }
 
@@ -303,9 +385,13 @@ async function handleRequest(
     }
 
     if (req.method === "GET" && url.pathname === "/financier/agent/status") {
-      const agentRes = await fetch(`${AGENT_RUNTIME}/status`);
+      const agentRes = await proxyAgentRuntime("/status");
+      if (!agentRes) {
+        json(res, 200, unavailableAgentStatus("agent-runtime unavailable — run: pnpm agent-runtime"));
+        return;
+      }
       if (!agentRes.ok) {
-        json(res, 502, { error: await agentRes.text() });
+        json(res, 200, unavailableAgentStatus(await agentRes.text()));
         return;
       }
       json(res, 200, await agentRes.json());
@@ -313,9 +399,13 @@ async function handleRequest(
     }
 
     if (req.method === "POST" && url.pathname === "/financier/agent/tick") {
-      const agentRes = await fetch(`${AGENT_RUNTIME}/tick`, { method: "POST" });
+      const agentRes = await proxyAgentRuntime("/tick", { method: "POST" });
+      if (!agentRes) {
+        json(res, 503, unavailableAgentStatus("agent-runtime unavailable — run: pnpm agent-runtime"));
+        return;
+      }
       const payload = await agentRes.json();
-      json(res, agentRes.ok ? 200 : 500, payload);
+      json(res, agentRes.ok ? 200 : 503, payload);
       return;
     }
 
@@ -562,6 +652,11 @@ async function handleRequest(
     const mandatePatch = url.pathname.match(/^\/financier\/mandates\/([^/]+)$/);
     if (req.method === "PATCH" && mandatePatch) {
       const mandateContractId = decodeURIComponent(mandatePatch[1] ?? "");
+      const mandateTemplateId = await resolveBiddingMandateTemplateId(
+        client,
+        [parties.financierA.partyId],
+        mandateContractId
+      );
       const body = (await readBody(req)) as {
         action?: "revoke" | "update" | "setAgentEnabled";
         maxExposure?: string;
@@ -572,7 +667,7 @@ async function handleRequest(
       const action = body.action ?? "update";
       let cmd;
       if (action === "revoke") {
-        cmd = buildRevokeMandateCommand({ mandateContractId });
+        cmd = buildRevokeMandateCommand({ mandateContractId, mandateTemplateId });
       } else if (action === "setAgentEnabled") {
         if (body.agentEnabled == null) {
           json(res, 400, { error: "agentEnabled required for setAgentEnabled" });
@@ -580,6 +675,7 @@ async function handleRequest(
         }
         cmd = buildSetMandateAgentEnabledCommand({
           mandateContractId,
+          mandateTemplateId,
           enabled: body.agentEnabled,
         });
       } else {
@@ -589,6 +685,7 @@ async function handleRequest(
         }
         cmd = buildUpdateMandateCommand({
           mandateContractId,
+          mandateTemplateId,
           maxExposure: body.maxExposure,
           minSpread: body.minSpread,
           eligibleSuppliers: body.eligibleSuppliers ?? [],
@@ -745,18 +842,33 @@ async function handleRequest(
       }
 
       const cash = loadCashManifest(ROOT);
-      const financier = body.financierPartyId ?? parties.financierA.partyId;
-      const advance = body.advanceAmount ?? "1500.0";
+      const bidInfo = await fetchBidPayload(client, parties, body.winningBidCid);
+      const financier =
+        body.financierPartyId ?? bidInfo?.financier ?? parties.financierA.partyId;
+      const advance = body.advanceAmount ?? bidInfo?.advanceAmount;
+      if (!advance) {
+        json(res, 400, {
+          error: "advanceAmount required — winning bid not found on ledger",
+        });
+        return;
+      }
+
       const now = new Date().toISOString();
       const weekLater = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString();
       const twoWeeks = new Date(Date.now() + 14 * 24 * 60 * 60 * 1000).toISOString();
 
-      const holdings = await client.getActiveContractsByInterface(
-        financier,
-        CIP56_INTERFACES.holding
-      );
-      const holdingCids = holdings
-        .filter((h) => h.templateId.includes("MusdHolding"))
+      const holdingRows = await client.getActiveContractsByTemplate(financier, CASH.musdHolding);
+      const holdingCids = holdingRows
+        .filter((h) => {
+          const p = h.payload as {
+            holding?: { instrumentId?: { id?: string; admin?: string }; lock?: unknown };
+          };
+          return (
+            p.holding?.instrumentId?.id === "MUSD" &&
+            p.holding?.instrumentId?.admin === cash.registryAdminPartyId &&
+            !p.holding?.lock
+          );
+        })
         .map((h) => h.contractId);
       if (holdingCids.length === 0) {
         json(res, 400, { error: "financier has no MUSD holdings — bootstrap cash first" });
@@ -773,7 +885,7 @@ async function handleRequest(
             financier,
             supplier: parties.supplier.partyId,
             advanceAmount: advance,
-            inputHoldingCids: holdingCids.slice(0, 1),
+            inputHoldingCids: holdingCids,
             requestedAt: now,
             allocateBefore: weekLater,
             settleBefore: twoWeeks,
@@ -791,6 +903,11 @@ async function handleRequest(
         commands: [
           buildAwardBidCommand({
             requestContractId: awardId,
+            requestTemplateId: await resolveFinancingRequestTemplateId(
+              client,
+              financingRequestParties(parties),
+              awardId
+            ),
             winningBidCid: body.winningBidCid,
             settlementAllocationCid: allocationCid,
             expectedAdvance: advance,
@@ -838,6 +955,21 @@ async function handleRequest(
         200,
         await proxyGet(`${SUPPLIER_INDEXER}/financier/positions/${financierPartyId}`)
       );
+      return;
+    }
+
+    const postForBidMatch = url.pathname.match(/^\/receivables\/([^/]+)\/post-for-bid$/);
+    if (req.method === "POST" && postForBidMatch) {
+      const receivableCid = decodeURIComponent(postForBidMatch[1]!);
+      const result = await client.submitAndWaitForTransaction({
+        actAs: [parties.supplier.partyId],
+        commands: [buildPostForBidCommand(receivableCid)],
+      });
+
+      json(res, 200, {
+        receivableContractId: extractCreatedContractId(result, "Receivable") ?? receivableCid,
+        transaction: result.transaction?.updateId,
+      });
       return;
     }
 
@@ -970,7 +1102,12 @@ async function handleRequest(
 
     const pauseId = financingRequestId(url.pathname, "pause");
     if (req.method === "POST" && pauseId) {
-      const cmd = buildPauseRoundCommand(pauseId);
+      const requestTemplateId = await resolveFinancingRequestTemplateId(
+        client,
+        financingRequestParties(parties),
+        pauseId
+      );
+      const cmd = buildPauseRoundCommand(pauseId, requestTemplateId);
       const result = await client.submitAndWaitForTransaction({
         actAs: [parties.supplier.partyId],
         commands: [cmd],
@@ -985,7 +1122,12 @@ async function handleRequest(
 
     const fallbackId = financingRequestId(url.pathname, "static-fallback");
     if (req.method === "POST" && fallbackId) {
-      const cmd = buildEnterStaticFallbackCommand(fallbackId);
+      const requestTemplateId = await resolveFinancingRequestTemplateId(
+        client,
+        financingRequestParties(parties),
+        fallbackId
+      );
+      const cmd = buildEnterStaticFallbackCommand(fallbackId, requestTemplateId);
       const result = await client.submitAndWaitForTransaction({
         actAs: [parties.supplier.partyId],
         commands: [cmd],
@@ -1000,7 +1142,12 @@ async function handleRequest(
 
     const expireId = financingRequestId(url.pathname, "expire");
     if (req.method === "POST" && expireId) {
-      const cmd = buildExpireRoundCommand({ requestContractId: expireId });
+      const requestTemplateId = await resolveFinancingRequestTemplateId(
+        client,
+        financingRequestParties(parties),
+        expireId
+      );
+      const cmd = buildExpireRoundCommand({ requestContractId: expireId, requestTemplateId });
       const result = await client.submitAndWaitForTransaction({
         actAs: [parties.supplier.partyId],
         commands: [cmd],
@@ -1032,9 +1179,15 @@ async function handleRequest(
       const mode = body.useStaticReference ? staticReferenceMode() : oracleAnchoredMode();
       const ledgerTime = new Date(oracle.packageTimestampMs).toISOString();
       const viaAgent = body.viaAgent ?? false;
+      const requestTemplateId = await resolveFinancingRequestTemplateId(
+        client,
+        financingRequestParties(parties),
+        bidRequestId
+      );
 
       const cmd = buildSubmitBidCommand({
         requestContractId: bidRequestId,
+        requestTemplateId,
         financier: parties.financierA.partyId,
         advanceAmount: body.advanceAmount,
         discountRate: body.discountRate,
@@ -1078,9 +1231,15 @@ async function handleRequest(
       const mode = body.useStaticReference ? staticReferenceMode() : oracleAnchoredMode();
       const ledgerTime = new Date(oracle.packageTimestampMs).toISOString();
       const viaAgent = body.viaAgent ?? false;
+      const requestTemplateId = await resolveFinancingRequestTemplateId(
+        client,
+        financingRequestParties(parties),
+        replaceBidId
+      );
 
       const cmd = buildReplaceBidCommand({
         requestContractId: replaceBidId,
+        requestTemplateId,
         financier: parties.financierA.partyId,
         advanceAmount: body.advanceAmount,
         discountRate: body.discountRate,

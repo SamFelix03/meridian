@@ -8,11 +8,14 @@ import type {
 export interface FinancierInvitation {
   contractId: string;
   requestId: string;
+  receivableCid?: string;
   supplier: string;
   deadline: string;
   pricingBandMin: string;
   pricingBandMax: string;
   roundState: string;
+  faceValue: string;
+  currency: string;
 }
 
 export interface GroqBidProposal {
@@ -25,6 +28,7 @@ export interface GroqBidProposal {
 export interface AgentLoopConfig {
   financierPartyId: string;
   financierIndexerUrl: string;
+  supplierIndexerUrl: string;
   oracleRelayUrl: string;
   groqApiKey: string;
   groqModel: string;

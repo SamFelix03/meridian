@@ -37,6 +37,8 @@ async function main(): Promise<void> {
   const pollMs = Number(process.env.AGENT_POLL_MS ?? 60_000);
   const financierIndexerUrl =
     process.env.FINANCIER_INDEXER_URL ?? "http://127.0.0.1:4013";
+  const supplierIndexerUrl =
+    process.env.SUPPLIER_INDEXER_URL ?? "http://127.0.0.1:4011";
   const oracleRelayUrl = process.env.ORACLE_RELAY_URL ?? "http://127.0.0.1:4021";
   const groqModel = process.env.GROQ_MODEL ?? "openai/gpt-oss-120b";
   const adversarialMode = process.env.AGENT_ADVERSARIAL === "1";
@@ -45,6 +47,7 @@ async function main(): Promise<void> {
   const loop = new AgentLoop({
     financierPartyId: resolveFinancierPartyId(),
     financierIndexerUrl,
+    supplierIndexerUrl,
     oracleRelayUrl,
     groqApiKey,
     groqModel,

@@ -301,23 +301,35 @@ export class ProjectionStore {
   getFinancierInvitations(): Array<{
     contractId: string;
     requestId: string;
+    receivableCid: string;
     supplier: string;
     deadline: string;
     pricingBandMin: string;
     pricingBandMax: string;
     roundState: RoundState;
     creditProfileStub: string;
+    faceValue: string;
+    currency: string;
   }> {
-    return this.getFinancingRounds().map((round) => ({
-      contractId: round.contractId,
-      requestId: round.requestId,
-      supplier: round.supplier,
-      deadline: round.deadline,
-      pricingBandMin: round.pricingBandMin,
-      pricingBandMax: round.pricingBandMax,
-      roundState: round.roundState,
-      creditProfileStub: `buyer-tier-${round.requestId.slice(-6).toLowerCase()}`,
-    }));
+    const receivableByCid = new Map(
+      this.getSupplierReceivables().map((r) => [r.contractId, r])
+    );
+    return this.getFinancingRounds().map((round) => {
+      const receivable = receivableByCid.get(round.receivableCid);
+      return {
+        contractId: round.contractId,
+        requestId: round.requestId,
+        receivableCid: round.receivableCid,
+        supplier: round.supplier,
+        deadline: round.deadline,
+        pricingBandMin: round.pricingBandMin,
+        pricingBandMax: round.pricingBandMax,
+        roundState: round.roundState,
+        creditProfileStub: `buyer-tier-${round.requestId.slice(-6).toLowerCase()}`,
+        faceValue: receivable?.faceValue ?? "",
+        currency: receivable?.currency ?? "USD",
+      };
+    });
   }
 
   getFinancierMyBids(actingParty: string): BidSummary[] {

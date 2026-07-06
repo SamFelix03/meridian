@@ -42,11 +42,13 @@ async function handleRequest(
     }
 
     if (req.method === "GET" && url === "/status") {
+      console.log("[agent-runtime] GET /status");
       json(res, 200, params.loop.getStatus());
       return;
     }
 
     if (req.method === "POST" && url === "/tick") {
+      console.log("[agent-runtime] POST /tick — starting Groq + ledger tick");
       const client = await params.getClient();
       const status = await params.loop.runTick(client);
       json(res, 200, status);

@@ -28,6 +28,7 @@ export function SupplierFinancingPage() {
   const [inviteB, setInviteB] = useState(true);
 
   const [awardMsg, setAwardMsg] = useState("");
+  const [postingId, setPostingId] = useState<string | null>(null);
 
   const refresh = useCallback(async () => {
     try {
@@ -65,7 +66,21 @@ export function SupplierFinancingPage() {
     refresh();
   }, [refresh]);
 
+  const issued = receivables.filter((r) => r.state === "Issued");
   const posted = receivables.filter((r) => r.state === "PostedForBid");
+
+  async function handlePostForBid(contractId: string) {
+    setPostingId(contractId);
+    try {
+      await api.postReceivableForBid(contractId);
+      await refresh();
+      setError("");
+    } catch (err) {
+      setError(String(err));
+    } finally {
+      setPostingId(null);
+    }
+  }
 
   async function handleOpenRound(e: React.FormEvent) {
     e.preventDefault();
@@ -91,10 +106,15 @@ export function SupplierFinancingPage() {
     }
   }
 
-  async function handleAward(requestId: string, bidContractId: string, advanceAmount: string) {
+  async function handleAward(
+    requestId: string,
+    bidContractId: string,
+    advanceAmount: string,
+    financierPartyId: string
+  ) {
     try {
       setAwardMsg("");
-      await api.awardFinancingBid(requestId, bidContractId);
+      await api.awardFinancingBid(requestId, bidContractId, advanceAmount, financierPartyId);
       setAwardMsg(
         `Award confirmed with atomic DvP — MUSD advance (${advanceAmount}) settled to supplier.`
       );
@@ -137,6 +157,29 @@ export function SupplierFinancingPage() {
       <p>Configure sealed-bid rounds, compare oracle-anchored bids, and award atomically.</p>
       {error && <p className="error">{error}</p>}
       {awardMsg && <p className="success">{awardMsg}</p>}
+
+      {issued.length > 0 && (
+        <>
+          <h2>Ready to post ({issued.length})</h2>
+          <p>After buyer co-sign, post receivables for bid before opening a financing round.</p>
+          {issued.map((r) => (
+            <div key={r.contractId} className="card">
+              <strong>{r.receivableId}</strong>{" "}
+              <span className="badge">{r.state}</span>
+              <p>
+                {r.faceValue} {r.currency} · due {r.dueDate}
+              </p>
+              <button
+                type="button"
+                onClick={() => handlePostForBid(r.contractId)}
+                disabled={postingId === r.contractId}
+              >
+                {postingId === r.contractId ? "Posting…" : "Post for bid"}
+              </button>
+            </div>
+          ))}
+        </>
+      )}
 
       <h2>Open Financing Round</h2>
       <form onSubmit={handleOpenRound}>
@@ -259,7 +302,12 @@ export function SupplierFinancingPage() {
                         <button
                           type="button"
                           onClick={() =>
-                            handleAward(round.contractId, bid.bidContractId, bid.advanceAmount)
+                            handleAward(
+                              round.contractId,
+                              bid.bidContractId,
+                              bid.advanceAmount,
+                              bid.financier
+                            )
                           }
                         >
                           Award (DvP)

@@ -2,6 +2,9 @@ import { useCallback, useEffect, useState } from "react";
 import type { AgentRunStatus, BiddingMandateSummary } from "@meridian/shared-types";
 import {
   api,
+  isAgentRuntimeOnline,
+  logAgent,
+  logAgentError,
   useNotifications,
   type BidSummary,
   type FinancierInvitation,
@@ -16,6 +19,7 @@ export function FinancierPage() {
     Array<{ receivableId: string; state: string; faceValue: string }>
   >([]);
   const [error, setError] = useState("");
+  const [agentTicking, setAgentTicking] = useState(false);
   const [advanceByRound, setAdvanceByRound] = useState<Record<string, string>>({});
   const [discountByRound, setDiscountByRound] = useState<Record<string, string>>({});
   const [mandateForm, setMandateForm] = useState({
@@ -27,13 +31,23 @@ export function FinancierPage() {
   });
 
   const refresh = useCallback(async () => {
+    console.log("[meridian-financier] refresh start");
     try {
       const [inv, bids, pos, mandateRes, agentRes] = await Promise.all([
         api.getFinancierInvitations(),
         api.getFinancierMyBids(),
-        api.getFinancierPositions().catch(() => ({ positions: [] })),
-        api.getFinancierMandates().catch(() => ({ mandates: [] })),
-        api.getAgentStatus().catch(() => null),
+        api.getFinancierPositions().catch((err) => {
+          console.warn("[meridian-financier] positions fetch failed", err);
+          return { positions: [] };
+        }),
+        api.getFinancierMandates().catch((err) => {
+          console.warn("[meridian-financier] mandates fetch failed", err);
+          return { mandates: [] };
+        }),
+        api.getAgentStatus().catch((err) => {
+          logAgentError("getAgentStatus failed — is agent-runtime running on :4025?", err);
+          return null;
+        }),
       ]);
       setInvitations(inv.invitations);
       setMyBids(bids.bids);
@@ -47,7 +61,17 @@ export function FinancierPage() {
         }))
       );
       setError("");
+      console.log("[meridian-financier] refresh ok", {
+        invitations: inv.invitations.length,
+        myBids: bids.bids.length,
+        mandates: mandateRes.mandates.length,
+        agentRuntime: isAgentRuntimeOnline(agentRes) ? "online" : "offline",
+        openInvitations: inv.invitations.filter(
+          (i) => i.roundState === "RoundOpen" || i.roundState === "StaticReferenceFallback"
+        ).length,
+      });
     } catch (e) {
+      console.error("[meridian-financier] refresh failed", e);
       setError(String(e));
     }
   }, []);
@@ -104,12 +128,27 @@ export function FinancierPage() {
   }
 
   async function handleAgentTick() {
+    setAgentTicking(true);
+    setError("");
+    const mandate = mandates.find((m) => m.agentEnabled && !m.revoked);
+    logAgent("Trigger agent tick clicked", {
+      activeMandate: mandate?.mandateId ?? null,
+      openInvitations: invitations.filter(
+        (i) => i.roundState === "RoundOpen" || i.roundState === "StaticReferenceFallback"
+      ).length,
+      existingBids: myBids.length,
+    });
     try {
       const status = await api.triggerAgentTick();
       setAgentStatus(status);
+      const submitted = status.decisions.filter((d) => d.submitted);
+      logAgent(`tick complete: ${submitted.length}/${status.decisions.length} bids submitted`);
       await refresh();
     } catch (err) {
+      logAgentError("triggerAgentTick failed", err);
       setError(String(err));
+    } finally {
+      setAgentTicking(false);
     }
   }
 
@@ -126,6 +165,7 @@ export function FinancierPage() {
   }
 
   const activeMandate = mandates.find((m) => m.agentEnabled && !m.revoked);
+  const agentOnline = isAgentRuntimeOnline(agentStatus);
 
   return (
     <div>
@@ -136,8 +176,16 @@ export function FinancierPage() {
       <h2>Agent bidding</h2>
       <div className="card">
         <p>
-          Mandate-constrained agent uses Groq <code>openai/gpt-oss-120b</code>; the ledger enforces
-          limits on <code>viaAgent</code> bids.
+          Agent runtime:{" "}
+          <span className={agentOnline ? "success" : "error"}>
+            {agentOnline ? "online (port 4025)" : "offline — run: pnpm agent-runtime"}
+          </span>
+          {" · "}
+          Open DevTools Console and filter <code>[meridian-agent]</code> for tick logs.
+        </p>
+        <p>
+          Mandate-constrained agent uses Groq <code>{agentStatus?.groqModel ?? "openai/gpt-oss-120b"}</code>; the
+          ledger enforces limits on <code>viaAgent</code> bids.
         </p>
         <p>
           Active mandate:{" "}
@@ -145,8 +193,8 @@ export function FinancierPage() {
             ? `${activeMandate.mandateId} (max ${activeMandate.maxExposure}, min spread ${activeMandate.minSpread})`
             : "none"}
         </p>
-        <button type="button" onClick={handleAgentTick}>
-          Trigger agent tick
+        <button type="button" onClick={handleAgentTick} disabled={agentTicking || !agentOnline}>
+          {agentTicking ? "Running agent tick…" : "Trigger agent tick"}
         </button>
         {agentStatus && (
           <div>

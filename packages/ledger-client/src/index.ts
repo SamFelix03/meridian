@@ -5,6 +5,7 @@ export * from "./commands.js";
 export * from "./cip56.js";
 export * from "./cash-settlement.js";
 export * from "./syndication-settlement.js";
+export * from "./contract-resolve.js";
 
 export interface JsonLedgerClientConfig {
   baseUrl: string;

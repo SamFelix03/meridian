@@ -85,7 +85,10 @@ export function BuyerPage() {
               </td>
               <td>{o.dueDate}</td>
               <td>
-                {(o.state === "Funded" || o.state === "Overdue" || !o.state) && (
+                {(o.state === "Funded" ||
+                  o.state === "PartiallySyndicated" ||
+                  o.state === "Overdue" ||
+                  !o.state) && (
                   <button onClick={() => repay(o)}>Repay obligation</button>
                 )}
               </td>

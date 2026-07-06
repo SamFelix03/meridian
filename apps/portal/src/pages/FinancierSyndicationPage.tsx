@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Award, Users } from "lucide-react";
 import {
   api,
   useNotifications,
@@ -6,11 +7,19 @@ import {
   type ParticipationInterestSummary,
   type SyndicationOfferingSummary,
 } from "../api";
-
-type Tab = "lead" | "participant";
+import { usePageTab } from "../hooks/usePageTab";
+import { Alert, EmptyState, PageHeader } from "../components/ui/Alert";
+import { Badge } from "../components/ui/Badge";
+import { Button } from "../components/ui/Button";
+import { Card, Surface } from "../components/ui/Surface";
+import { Field, FieldGroup, FieldLabel } from "../components/ui/Field";
+import { Input } from "../components/ui/Input";
+import { CustomSelect } from "../components/ui/CustomSelect";
+import { PageTabBar } from "../components/ui/PageTabBar";
+import { truncateParty } from "../lib/utils";
 
 export function FinancierSyndicationPage() {
-  const [tab, setTab] = useState<Tab>("lead");
+  const [tab, setTab] = usePageTab(["lead", "participant"] as const, "lead");
   const [error, setError] = useState("");
   const [positions, setPositions] = useState<
     Array<{ contractId: string; receivableId: string; faceValue: string; state: string }>
@@ -137,143 +146,208 @@ export function FinancierSyndicationPage() {
   }
 
   return (
-    <div>
-      <h1>Syndication Desk</h1>
-      <p>Secondary market — sealed interest bids; supplier and buyer never see syndication data.</p>
-      {error && <p className="error">{error}</p>}
+    <div className="space-y-6">
+      <PageHeader
+        title="Syndication Desk"
+        description="Secondary market — sealed interest bids; supplier and buyer never see syndication data."
+      />
 
-      <div className="tabs">
-        <button
-          type="button"
-          className={tab === "lead" ? "active" : ""}
-          onClick={() => setTab("lead")}
-        >
-          Lead financier
-        </button>
-        <button
-          type="button"
-          className={tab === "participant" ? "active" : ""}
-          onClick={() => setTab("participant")}
-        >
-          Participant
-        </button>
-      </div>
+      {error && <Alert variant="destructive">{error}</Alert>}
+
+      <PageTabBar
+        tabs={[
+          { id: "lead", label: "Lead Financier", count: offerings.length },
+          { id: "participant", label: "Participant", count: invitations.length },
+        ]}
+        activeTab={tab}
+        onTabChange={setTab}
+      />
 
       {tab === "lead" && (
         <>
-          <h2>Eligible funded positions</h2>
-          {positions.length === 0 && <p>No funded positions eligible for syndication.</p>}
-          <select
-            value={selectedReceivable}
-            onChange={(e) => setSelectedReceivable(e.target.value)}
-          >
-            <option value="">Select position…</option>
-            {positions.map((p) => (
-              <option key={p.contractId} value={p.contractId}>
-                {p.receivableId} — {p.faceValue} ({p.state})
-              </option>
-            ))}
-          </select>
-          <button type="button" onClick={handleOpenOffering}>
-            Open syndication offering
-          </button>
-
-          <h2>Active offerings ({offerings.length})</h2>
-          {offerings.map((o) => (
-            <div key={o.contractId} className="card">
-              <strong>{o.offeringId}</strong>{" "}
-              <span className="badge">{o.roundState}</span>
-              <p>Receivable {o.receivableId} · face {o.faceValue}</p>
-              <p>
-                Band {o.pricingBandMin}–{o.pricingBandMax} · deadline {o.deadline}
-              </p>
-              {o.roundState === "RoundOpen" && (
+          <Surface title="Open Syndication Offering">
+            <div className="space-y-4">
+              {positions.length === 0 ? (
+                <EmptyState>No funded positions eligible for syndication.</EmptyState>
+              ) : (
                 <>
-                  <button type="button" onClick={() => loadBids(o.contractId)}>
-                    Load bids
-                  </button>
-                  <input
-                    placeholder="Winning bid CID"
-                    value={offeringBids[o.contractId] ?? ""}
-                    onChange={(e) =>
-                      setOfferingBids((prev) => ({
-                        ...prev,
-                        [o.contractId]: e.target.value,
-                      }))
-                    }
-                  />
-                  <button type="button" onClick={() => handleAward(o.contractId)}>
-                    Award bid
-                  </button>
+                  <Field>
+                    <FieldLabel htmlFor="position">Eligible funded positions</FieldLabel>
+                    <CustomSelect
+                      id="position"
+                      value={selectedReceivable}
+                      onChange={setSelectedReceivable}
+                      placeholder="Select position…"
+                      options={positions.map((p) => ({
+                        value: p.contractId,
+                        label: `${p.receivableId} — ${p.faceValue}`,
+                        description: p.state,
+                      }))}
+                    />
+                  </Field>
+                  <Button type="button" onClick={handleOpenOffering}>
+                    <Users className="size-4" />
+                    Open syndication offering
+                  </Button>
                 </>
               )}
-              {capTables[o.receivableId] && (
-                <div>
-                  <h3>Cap table</h3>
-                  <ul>
-                    {capTables[o.receivableId]!.map((e) => (
-                      <li key={e.entryRef ?? e.participant}>
-                        {e.participant.slice(0, 20)}… — {e.shareBps} bps
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              )}
             </div>
-          ))}
+          </Surface>
+
+          <div>
+            <h2 className="mb-4 font-heading text-lg font-semibold text-foreground">
+              Active Offerings ({offerings.length})
+            </h2>
+            {offerings.length === 0 ? (
+              <EmptyState>No active syndication offerings.</EmptyState>
+            ) : (
+              <div className="grid gap-4">
+                {offerings.map((o) => (
+                  <Card key={o.contractId}>
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <strong className="font-heading">{o.offeringId}</strong>
+                        <Badge>{o.roundState}</Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Receivable {o.receivableId} · face {o.faceValue}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Band {o.pricingBandMin}–{o.pricingBandMax} · deadline {o.deadline}
+                      </p>
+                      {o.roundState === "RoundOpen" && (
+                        <div className="flex flex-wrap items-end gap-2 border-t border-border pt-3">
+                          <Button
+                            type="button"
+                            variant="secondary"
+                            size="sm"
+                            onClick={() => loadBids(o.contractId)}
+                          >
+                            Load bids
+                          </Button>
+                          <Input
+                            className="max-w-xs"
+                            placeholder="Winning bid CID"
+                            value={offeringBids[o.contractId] ?? ""}
+                            onChange={(e) =>
+                              setOfferingBids((prev) => ({
+                                ...prev,
+                                [o.contractId]: e.target.value,
+                              }))
+                            }
+                          />
+                          <Button type="button" size="sm" onClick={() => handleAward(o.contractId)}>
+                            <Award className="size-3.5" />
+                            Award bid
+                          </Button>
+                        </div>
+                      )}
+                      {capTables[o.receivableId] && (
+                        <div className="border-t border-border pt-3">
+                          <h3 className="mb-2 font-heading text-sm font-semibold">Cap table</h3>
+                          <ul className="space-y-1 text-sm text-muted-foreground">
+                            {capTables[o.receivableId]!.map((e) => (
+                              <li key={e.entryRef ?? e.participant}>
+                                {truncateParty(e.participant, 20)} — {e.shareBps} bps
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
         </>
       )}
 
       {tab === "participant" && (
         <>
-          <h2>Invitations ({invitations.length})</h2>
-          {invitations.map((inv) => (
-            <div key={inv.contractId} className="card">
-              <strong>{inv.offeringId}</strong>{" "}
-              <span className="badge">{inv.roundState}</span>
-              <p>Lead {inv.leadFinancier.slice(0, 24)}…</p>
-              <p>Face {inv.faceValue} · deadline {inv.deadline}</p>
-              {(inv.roundState === "RoundOpen" ||
-                inv.roundState === "StaticReferenceFallback") && (
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    handleSubmitBid(
-                      inv.contractId,
-                      inv.roundState === "StaticReferenceFallback"
-                    );
-                  }}
-                >
-                  <label>
-                    Share (bps)
-                    <input
-                      value={shareBps}
-                      onChange={(e) => setShareBps(e.target.value)}
-                    />
-                  </label>
-                  <label>
-                    Discount rate
-                    <input
-                      value={discountRate}
-                      onChange={(e) => setDiscountRate(e.target.value)}
-                    />
-                  </label>
-                  <button type="submit">Submit sealed interest</button>
-                </form>
-              )}
-            </div>
-          ))}
+          <div>
+            <h2 className="mb-4 font-heading text-lg font-semibold text-foreground">
+              Invitations ({invitations.length})
+            </h2>
+            {invitations.length === 0 ? (
+              <EmptyState>No syndication invitations.</EmptyState>
+            ) : (
+              <div className="grid gap-4">
+                {invitations.map((inv) => (
+                  <Card key={inv.contractId}>
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <strong className="font-heading">{inv.offeringId}</strong>
+                        <Badge>{inv.roundState}</Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Lead {truncateParty(inv.leadFinancier, 24)}
+                      </p>
+                      <p className="text-sm text-muted-foreground">
+                        Face {inv.faceValue} · deadline {inv.deadline}
+                      </p>
+                      {(inv.roundState === "RoundOpen" ||
+                        inv.roundState === "StaticReferenceFallback") && (
+                        <form
+                          className="border-t border-border pt-4"
+                          onSubmit={(e) => {
+                            e.preventDefault();
+                            handleSubmitBid(
+                              inv.contractId,
+                              inv.roundState === "StaticReferenceFallback"
+                            );
+                          }}
+                        >
+                          <FieldGroup>
+                            <div className="grid gap-4 sm:grid-cols-2">
+                              <Field>
+                                <FieldLabel>Share (bps)</FieldLabel>
+                                <Input
+                                  value={shareBps}
+                                  onChange={(e) => setShareBps(e.target.value)}
+                                />
+                              </Field>
+                              <Field>
+                                <FieldLabel>Discount rate</FieldLabel>
+                                <Input
+                                  value={discountRate}
+                                  onChange={(e) => setDiscountRate(e.target.value)}
+                                />
+                              </Field>
+                            </div>
+                            <Button type="submit">Submit sealed interest</Button>
+                          </FieldGroup>
+                        </form>
+                      )}
+                    </div>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
 
-          <h2>My participation interests ({interests.length})</h2>
-          {interests.map((i) => (
-            <div key={i.contractId} className="card">
-              <strong>{i.receivableId}</strong>
-              <p>
-                {i.shareBps} bps · {i.legalNature} ({i.instrumentClass})
-              </p>
-              <p>Face {i.faceValue} {i.currency}</p>
-            </div>
-          ))}
+          <div>
+            <h2 className="mb-4 font-heading text-lg font-semibold text-foreground">
+              My Participation Interests ({interests.length})
+            </h2>
+            {interests.length === 0 ? (
+              <EmptyState>No participation interests yet.</EmptyState>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {interests.map((i) => (
+                  <Card key={i.contractId}>
+                    <strong className="font-heading text-foreground">{i.receivableId}</strong>
+                    <p className="mt-1 text-sm text-muted-foreground">
+                      {i.shareBps} bps · {i.legalNature} ({i.instrumentClass})
+                    </p>
+                    <p className="text-sm text-muted-foreground">
+                      Face {i.faceValue} {i.currency}
+                    </p>
+                  </Card>
+                ))}
+              </div>
+            )}
+          </div>
         </>
       )}
     </div>

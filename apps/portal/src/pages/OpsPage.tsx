@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { Activity, Eye, Scale, ShieldCheck } from "lucide-react";
 import type {
   OracleHealthStatus,
   RegulatorExposureRollup,
@@ -6,14 +7,34 @@ import type {
   SettlementFinalitySummary,
 } from "@meridian/shared-types";
 import { api } from "../api";
+import { usePageTab } from "../hooks/usePageTab";
+import { Alert, InlineCode, PageHeader } from "../components/ui/Alert";
+import { Badge } from "../components/ui/Badge";
+import { Button } from "../components/ui/Button";
+import { Card, Surface } from "../components/ui/Surface";
+import { Field, FieldGroup, FieldLabel } from "../components/ui/Field";
+import { Input } from "../components/ui/Input";
+import { PageTabBar } from "../components/ui/PageTabBar";
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from "../components/ui/Table";
 
 export function OpsPage() {
+  const [tab, setTab] = usePageTab(["monitors", "regulator", "kyb"] as const, "monitors");
   const [settlement, setSettlement] = useState<SettlementFinalitySummary | null>(null);
   const [oracle, setOracle] = useState<OracleHealthStatus | null>(null);
   const [grants, setGrants] = useState<RegulatorJurisdictionGrantSummary[]>([]);
   const [rollups, setRollups] = useState<RegulatorExposureRollup[]>([]);
   const [error, setError] = useState("");
-  const [grantForm, setGrantForm] = useState({ grantId: `grant-${Date.now()}`, jurisdiction: "US" });
+  const [grantForm, setGrantForm] = useState({
+    grantId: `grant-${Date.now()}`,
+    jurisdiction: "US",
+  });
   const [observerForm, setObserverForm] = useState({
     receivableContractId: "",
     jurisdiction: "US",
@@ -110,162 +131,272 @@ export function OpsPage() {
   }
 
   return (
-    <main className="page">
-      <h1>Ops &amp; Compliance Console</h1>
-      <p className="muted">
-        Platform-operator view: settlement finality, oracle health, and regulator administration.
-        No per-bid pricing is exposed here.
-      </p>
-      {error && <p className="error">{error}</p>}
+    <div className="space-y-6">
+      <PageHeader
+        title="Ops & Compliance Console"
+        description="Platform-operator view: settlement finality, oracle health, and regulator administration. No per-bid pricing is exposed here."
+      />
 
-      <section className="card">
-        <h2>Settlement-finality monitor</h2>
-        {settlement ? (
-          <ul>
-            <li>Atomic: {settlement.atomic}</li>
-            <li>Reassignment-mediated: {settlement.reassignmentMediated}</li>
-            <li>Escrow fallback: {settlement.escrowFallback}</li>
-            <li>Total: {settlement.total}</li>
-          </ul>
-        ) : (
-          <p>Loading…</p>
-        )}
-      </section>
+      {error && <Alert variant="destructive">{error}</Alert>}
 
-      <section className="card">
-        <h2>Oracle health monitor</h2>
-        {oracle ? (
-          <ul>
-            <li>Service OK: {oracle.ok ? "yes" : "no"}</li>
-            <li>Feed fresh: {oracle.isFresh ? "yes" : "no"}</li>
-            <li>Cached: {oracle.cached ? "yes" : "no"}</li>
-            <li>Last error: {oracle.lastError ?? "none"}</li>
-            {oracle.referenceRate && (
-              <li>
-                SOFR: {oracle.referenceRate.value} (age {oracle.referenceRate.ageMs} ms)
+      <PageTabBar
+        tabs={[
+          { id: "monitors", label: "Monitors" },
+          { id: "regulator", label: "Regulator Admin", count: grants.length },
+          { id: "kyb", label: "KYB / AML" },
+        ]}
+        activeTab={tab}
+        onTabChange={setTab}
+      />
+
+      {tab === "monitors" && (
+      <div className="grid gap-6 lg:grid-cols-2">
+        <Surface title="Settlement-finality monitor">
+          <div className="mb-3 flex items-center gap-2 text-primary">
+            <Scale className="size-4" />
+          </div>
+          {settlement ? (
+            <ul className="space-y-2 text-sm">
+              <li className="flex justify-between">
+                <span className="text-muted-foreground">Atomic</span>
+                <span className="font-medium">{settlement.atomic}</span>
               </li>
-            )}
-          </ul>
-        ) : (
-          <p>Loading…</p>
-        )}
-      </section>
+              <li className="flex justify-between">
+                <span className="text-muted-foreground">Reassignment-mediated</span>
+                <span className="font-medium">{settlement.reassignmentMediated}</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-muted-foreground">Escrow fallback</span>
+                <span className="font-medium">{settlement.escrowFallback}</span>
+              </li>
+              <li className="flex justify-between border-t border-border pt-2">
+                <span className="text-muted-foreground">Total</span>
+                <span className="font-heading font-semibold">{settlement.total}</span>
+              </li>
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          )}
+        </Surface>
 
-      <section className="card">
-        <h2>Regulator-view administration</h2>
-        <form onSubmit={handleCreateGrant} className="inline-form">
-          <input
-            value={grantForm.grantId}
-            onChange={(e) => setGrantForm((f) => ({ ...f, grantId: e.target.value }))}
-            placeholder="grant id"
-          />
-          <input
-            value={grantForm.jurisdiction}
-            onChange={(e) => setGrantForm((f) => ({ ...f, jurisdiction: e.target.value }))}
-            placeholder="jurisdiction"
-          />
-          <button type="submit">Create jurisdiction grant</button>
+        <Surface title="Oracle health monitor">
+          <div className="mb-3 flex items-center gap-2 text-primary">
+            <Activity className="size-4" />
+          </div>
+          {oracle ? (
+            <ul className="space-y-2 text-sm">
+              <li className="flex items-center justify-between">
+                <span className="text-muted-foreground">Service OK</span>
+                <Badge variant={oracle.ok ? "success" : "destructive"}>
+                  {oracle.ok ? "yes" : "no"}
+                </Badge>
+              </li>
+              <li className="flex items-center justify-between">
+                <span className="text-muted-foreground">Feed fresh</span>
+                <Badge variant={oracle.isFresh ? "success" : "destructive"}>
+                  {oracle.isFresh ? "yes" : "no"}
+                </Badge>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-muted-foreground">Cached</span>
+                <span className="font-medium">{oracle.cached ? "yes" : "no"}</span>
+              </li>
+              <li className="flex justify-between">
+                <span className="text-muted-foreground">Last error</span>
+                <span className="font-medium">{oracle.lastError ?? "none"}</span>
+              </li>
+              {oracle.referenceRate && (
+                <li className="border-t border-border pt-2 text-muted-foreground">
+                  SOFR: {oracle.referenceRate.value} (age {oracle.referenceRate.ageMs} ms)
+                </li>
+              )}
+            </ul>
+          ) : (
+            <p className="text-sm text-muted-foreground">Loading…</p>
+          )}
+        </Surface>
+      </div>
+      )}
+
+      {tab === "regulator" && (
+      <Surface title="Regulator-view administration">
+        <div className="mb-3 flex items-center gap-2 text-primary">
+          <ShieldCheck className="size-4" />
+        </div>
+
+        <form onSubmit={handleCreateGrant} className="mb-6">
+          <FieldGroup>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Input
+                value={grantForm.grantId}
+                onChange={(e) => setGrantForm((f) => ({ ...f, grantId: e.target.value }))}
+                placeholder="grant id"
+              />
+              <Input
+                value={grantForm.jurisdiction}
+                onChange={(e) => setGrantForm((f) => ({ ...f, jurisdiction: e.target.value }))}
+                placeholder="jurisdiction"
+              />
+              <Button type="submit">Create jurisdiction grant</Button>
+            </div>
+          </FieldGroup>
         </form>
+
         {grants.length > 0 && (
-          <table>
-            <thead>
-              <tr>
-                <th>Grant</th>
-                <th>Jurisdiction</th>
-                <th>Active</th>
-                <th />
-              </tr>
-            </thead>
-            <tbody>
-              {grants.map((g) => (
-                <tr key={g.contractId}>
-                  <td>{g.grantId}</td>
-                  <td>{g.jurisdiction}</td>
-                  <td>{g.active ? "yes" : "no"}</td>
-                  <td>
-                    {g.active && (
-                      <button type="button" onClick={() => api.revokeOpsRegulatorGrant(g.contractId).then(refresh)}>
-                        Revoke
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        <form onSubmit={handleGrantObserver} className="inline-form">
-          <input
-            value={observerForm.receivableContractId}
-            onChange={(e) =>
-              setObserverForm((f) => ({ ...f, receivableContractId: e.target.value }))
-            }
-            placeholder="receivable contract id"
-          />
-          <input
-            value={observerForm.jurisdiction}
-            onChange={(e) => setObserverForm((f) => ({ ...f, jurisdiction: e.target.value }))}
-            placeholder="jurisdiction"
-          />
-          <button type="submit">Grant regulator observer</button>
-        </form>
-        {rollups.length > 0 && (
-          <>
-            <h3>Regulator exposure rollups</h3>
-            <table>
-              <thead>
-                <tr>
-                  <th>Jurisdiction</th>
-                  <th>Total exposure</th>
-                  <th>Receivables</th>
-                </tr>
-              </thead>
-              <tbody>
-                {rollups.map((r) => (
-                  <tr key={r.jurisdiction}>
-                    <td>{r.jurisdiction}</td>
-                    <td>{r.totalExposure}</td>
-                    <td>{r.receivableCount}</td>
-                  </tr>
+          <Card className="mb-6 p-0 overflow-hidden">
+            <Table>
+              <TableHeader>
+                <TableRow>
+                  <TableHead>Grant</TableHead>
+                  <TableHead>Jurisdiction</TableHead>
+                  <TableHead>Active</TableHead>
+                  <TableHead />
+                </TableRow>
+              </TableHeader>
+              <TableBody>
+                {grants.map((g) => (
+                  <TableRow key={g.contractId}>
+                    <TableCell>{g.grantId}</TableCell>
+                    <TableCell>{g.jurisdiction}</TableCell>
+                    <TableCell>
+                      <Badge variant={g.active ? "success" : "muted"}>
+                        {g.active ? "yes" : "no"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>
+                      {g.active && (
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          size="sm"
+                          onClick={() => api.revokeOpsRegulatorGrant(g.contractId).then(refresh)}
+                        >
+                          Revoke
+                        </Button>
+                      )}
+                    </TableCell>
+                  </TableRow>
                 ))}
-              </tbody>
-            </table>
-          </>
+              </TableBody>
+            </Table>
+          </Card>
         )}
-      </section>
 
-      <section className="card">
-        <h2>KYB / AML gate</h2>
-        <form onSubmit={handleKybVerify} className="inline-form">
-          <input
-            value={kybForm.legalEntityId}
-            onChange={(e) => setKybForm((f) => ({ ...f, legalEntityId: e.target.value }))}
-            placeholder="legal entity id"
-          />
-          <input
-            value={kybForm.jurisdiction}
-            onChange={(e) => setKybForm((f) => ({ ...f, jurisdiction: e.target.value }))}
-            placeholder="jurisdiction"
-          />
-          <input
-            value={kybForm.partyHint}
-            onChange={(e) => setKybForm((f) => ({ ...f, partyHint: e.target.value }))}
-            placeholder="party hint (optional)"
-          />
-          <button type="submit">Start KYB verify</button>
+        <form onSubmit={handleGrantObserver} className="mb-6">
+          <FieldGroup>
+            <div className="grid gap-3 sm:grid-cols-3">
+              <Input
+                value={observerForm.receivableContractId}
+                onChange={(e) =>
+                  setObserverForm((f) => ({ ...f, receivableContractId: e.target.value }))
+                }
+                placeholder="receivable contract id"
+              />
+              <Input
+                value={observerForm.jurisdiction}
+                onChange={(e) =>
+                  setObserverForm((f) => ({ ...f, jurisdiction: e.target.value }))
+                }
+                placeholder="jurisdiction"
+              />
+              <Button type="submit">
+                <Eye className="size-4" />
+                Grant regulator observer
+              </Button>
+            </div>
+          </FieldGroup>
         </form>
-        {kybVerificationId && (
-          <p>
-            Verification <code>{kybVerificationId}</code> —{" "}
-            <button type="button" onClick={() => handleKybComplete("APPROVED")}>
-              Approve
-            </button>{" "}
-            <button type="button" onClick={() => handleKybComplete("REJECTED")}>
-              Reject
-            </button>
-          </p>
+
+        {rollups.length > 0 && (
+          <div>
+            <h3 className="mb-3 font-heading text-sm font-semibold">Regulator exposure rollups</h3>
+            <Card className="p-0 overflow-hidden">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Jurisdiction</TableHead>
+                    <TableHead>Total exposure</TableHead>
+                    <TableHead>Receivables</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {rollups.map((r) => (
+                    <TableRow key={r.jurisdiction}>
+                      <TableCell>{r.jurisdiction}</TableCell>
+                      <TableCell>{r.totalExposure}</TableCell>
+                      <TableCell>{r.receivableCount}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </Card>
+          </div>
         )}
-      </section>
-    </main>
+      </Surface>
+      )}
+
+      {tab === "kyb" && (
+      <Surface title="KYB / AML gate">
+        <form onSubmit={handleKybVerify}>
+          <FieldGroup>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <Field>
+                <FieldLabel>Legal entity id</FieldLabel>
+                <Input
+                  value={kybForm.legalEntityId}
+                  onChange={(e) =>
+                    setKybForm((f) => ({ ...f, legalEntityId: e.target.value }))
+                  }
+                  placeholder="legal entity id"
+                />
+              </Field>
+              <Field>
+                <FieldLabel>Jurisdiction</FieldLabel>
+                <Input
+                  value={kybForm.jurisdiction}
+                  onChange={(e) =>
+                    setKybForm((f) => ({ ...f, jurisdiction: e.target.value }))
+                  }
+                  placeholder="jurisdiction"
+                />
+              </Field>
+              <Field>
+                <FieldLabel>Party hint (optional)</FieldLabel>
+                <Input
+                  value={kybForm.partyHint}
+                  onChange={(e) => setKybForm((f) => ({ ...f, partyHint: e.target.value }))}
+                  placeholder="party hint"
+                />
+              </Field>
+              <div className="flex items-end">
+                <Button type="submit" className="w-full">
+                  Start KYB verify
+                </Button>
+              </div>
+            </div>
+          </FieldGroup>
+        </form>
+
+        {kybVerificationId && (
+          <div className="mt-4 flex flex-wrap items-center gap-3 rounded-2xl border border-border bg-muted/30 px-4 py-3 text-sm">
+            <span>
+              Verification <InlineCode>{kybVerificationId}</InlineCode>
+            </span>
+            <Button type="button" size="sm" variant="success" onClick={() => handleKybComplete("APPROVED")}>
+              Approve
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="destructive"
+              onClick={() => handleKybComplete("REJECTED")}
+            >
+              Reject
+            </Button>
+          </div>
+        )}
+      </Surface>
+      )}
+    </div>
   );
 }

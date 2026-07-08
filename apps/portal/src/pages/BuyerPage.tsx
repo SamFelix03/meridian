@@ -2,8 +2,10 @@ import { useCallback, useEffect, useState } from "react";
 import { CheckCircle2, CreditCard } from "lucide-react";
 import { api, useNotifications, type BuyerObligation, type ReceivableProposal } from "../api";
 import { usePageTab } from "../hooks/usePageTab";
+import { useActivityLog } from "../hooks/useActivityLog";
 import { Alert, EmptyState, PageHeader } from "../components/ui/Alert";
 import { Button } from "../components/ui/Button";
+import { ActivityLogPanel } from "../components/ui/ActivityLogPanel";
 import { DataTable } from "../components/ui/DataTable";
 import { Card } from "../components/ui/Surface";
 import { PageTabBar } from "../components/ui/PageTabBar";
@@ -14,6 +16,8 @@ export function BuyerPage() {
   const [obligations, setObligations] = useState<BuyerObligation[]>([]);
   const [proposals, setProposals] = useState<ReceivableProposal[]>([]);
   const [error, setError] = useState("");
+  const { entries: logEntries, info, error: logError, debug, clear: clearLog } =
+    useActivityLog("buyer-portal");
 
   const refresh = useCallback(async () => {
     try {
@@ -24,35 +28,61 @@ export function BuyerPage() {
       setObligations(o.obligations);
       setProposals(p.proposals);
       setError("");
+      debug("Buyer data refreshed", {
+        obligations: o.obligations.length,
+        proposals: p.proposals.length,
+      });
     } catch (e) {
-      setError(String(e));
+      const message = String(e);
+      setError(message);
+      logError("Failed to refresh buyer data", { error: message });
     }
-  }, []);
+  }, [debug, logError]);
 
-  useNotifications("meridian-buyer", refresh);
+  const onLedgerNotify = useCallback(() => {
+    info("Ledger notification received — refreshing buyer view");
+  }, [info]);
+
+  useNotifications("meridian-buyer", refresh, { onNotify: onLedgerNotify });
   useEffect(() => {
-    refresh();
+    void refresh();
   }, [refresh]);
 
-  async function cosign(contractId: string) {
+  async function cosign(contractId: string, proposalId: string) {
+    info("Co-signing invoice proposal", { proposalId, contractId });
     try {
       await api.cosignInvoice(contractId);
+      info("Invoice co-signed and issued on-ledger", { proposalId });
       await refresh();
     } catch (err) {
-      setError(String(err));
+      const message = String(err);
+      setError(message);
+      logError("Co-sign failed", { proposalId, error: message });
     }
   }
 
   async function repay(o: BuyerObligation) {
+    const settlementRef = `portal-${o.receivableId}-${Date.now()}`;
+    info("Submitting repayment", {
+      receivableId: o.receivableId,
+      faceValue: o.faceValue,
+      settlementRef,
+    });
     try {
       await api.repayObligation(o.contractId, {
         faceValue: o.faceValue,
         payeePartyId: o.payee,
-        settlementRef: `portal-${o.receivableId}-${Date.now()}`,
+        settlementRef,
+      });
+      info("Repayment submitted on-ledger", {
+        receivableId: o.receivableId,
+        settlementRef,
       });
       await refresh();
     } catch (err) {
-      setError(String(err));
+      const message = String(err);
+      setError(message);
+      logError("Repayment failed", { receivableId: o.receivableId, error: message });
     }
   }
 
@@ -98,7 +128,11 @@ export function BuyerPage() {
                         {p.faceValue} {p.currency} · due {p.dueDate}
                       </p>
                     </div>
-                    <Button type="button" size="sm" onClick={() => cosign(p.contractId)}>
+                    <Button
+                      type="button"
+                      size="sm"
+                      onClick={() => cosign(p.contractId, p.proposalId)}
+                    >
                       <CheckCircle2 className="size-4" />
                       Co-Sign &amp; Issue
                     </Button>
@@ -170,6 +204,14 @@ export function BuyerPage() {
           )}
         </div>
       )}
+
+      <ActivityLogPanel
+        entries={logEntries}
+        title="Buyer activity log"
+        emptyMessage="Co-sign and repayment actions will appear here."
+        onClear={clearLog}
+        maxHeight="14rem"
+      />
     </div>
   );
 }

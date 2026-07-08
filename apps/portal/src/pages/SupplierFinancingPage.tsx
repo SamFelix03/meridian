@@ -8,6 +8,7 @@ import {
   type SupplierReceivable,
 } from "../api";
 import { usePageTab } from "../hooks/usePageTab";
+import { useActivityLog } from "../hooks/useActivityLog";
 import { Alert, EmptyState, GuidancePanel, PageHeader } from "../components/ui/Alert";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -17,6 +18,7 @@ import { DataTable } from "../components/ui/DataTable";
 import { Checkbox, Field, FieldGroup, FieldLabel } from "../components/ui/Field";
 import { Input } from "../components/ui/Input";
 import { PageTabBar } from "../components/ui/PageTabBar";
+import { ActivityLogPanel } from "../components/ui/ActivityLogPanel";
 import { truncateParty } from "../lib/utils";
 
 function defaultDeadline(): string {
@@ -39,6 +41,8 @@ export function SupplierFinancingPage() {
   const [inviteB, setInviteB] = useState(true);
   const [awardMsg, setAwardMsg] = useState("");
   const [postingId, setPostingId] = useState<string | null>(null);
+  const { entries: logEntries, info, warn, error: logError, clear: clearLog } =
+    useActivityLog("supplier-financing");
 
   const refresh = useCallback(async () => {
     try {
@@ -67,11 +71,17 @@ export function SupplierFinancingPage() {
       );
       setBidMap(Object.fromEntries(bidEntries));
     } catch (e) {
-      setError(String(e));
+      const message = String(e);
+      setError(message);
+      logError("Failed to refresh financing data", { error: message });
     }
-  }, []);
+  }, [logError]);
 
-  useNotifications("meridian-supplier", refresh);
+  const onLedgerNotify = useCallback(() => {
+    info("Ledger notification received — refreshing financing rounds");
+  }, [info]);
+
+  useNotifications("meridian-supplier", refresh, { onNotify: onLedgerNotify });
   useEffect(() => {
     refresh();
   }, [refresh]);
@@ -79,14 +89,18 @@ export function SupplierFinancingPage() {
   const issued = receivables.filter((r) => r.state === "Issued");
   const posted = receivables.filter((r) => r.state === "PostedForBid");
 
-  async function handlePostForBid(contractId: string) {
+  async function handlePostForBid(contractId: string, receivableId: string) {
     setPostingId(contractId);
+    info("Posting receivable for financing", { receivableId, contractId });
     try {
       await api.postReceivableForBid(contractId);
+      info("Receivable posted for bid", { receivableId });
       await refresh();
       setError("");
     } catch (err) {
-      setError(String(err));
+      const message = String(err);
+      setError(message);
+      logError("Post for bid failed", { receivableId, error: message });
     } finally {
       setPostingId(null);
     }
@@ -102,6 +116,13 @@ export function SupplierFinancingPage() {
       setError("Select at least one financier");
       return;
     }
+    info("Opening financing round", {
+      receivableCid: selectedReceivable,
+      financiers: financiers.length,
+      deadline,
+      pricingMin,
+      pricingMax,
+    });
     try {
       await api.openFinancingRound({
         receivableCid: selectedReceivable,
@@ -110,9 +131,12 @@ export function SupplierFinancingPage() {
         pricingBandMin: pricingMin,
         pricingBandMax: pricingMax,
       });
+      info("Financing round opened on-ledger", { receivableCid: selectedReceivable });
       await refresh();
     } catch (err) {
-      setError(String(err));
+      const message = String(err);
+      setError(message);
+      logError("Open financing round failed", { error: message });
     }
   }
 
@@ -124,40 +148,56 @@ export function SupplierFinancingPage() {
   ) {
     try {
       setAwardMsg("");
+      info("Awarding financing bid", { requestId, bidContractId, advanceAmount });
       await api.awardFinancingBid(requestId, bidContractId, advanceAmount, financierPartyId);
+      info("Bid awarded with atomic DvP settlement", { requestId, advanceAmount });
       setAwardMsg(
         `Award confirmed with atomic DvP — MUSD advance (${advanceAmount}) settled to supplier.`
       );
       await refresh();
     } catch (err) {
-      setError(String(err));
+      const message = String(err);
+      setError(message);
+      logError("Award failed", { requestId, error: message });
     }
   }
 
   async function handlePause(requestId: string) {
+    info("Pausing financing round", { requestId });
     try {
       await api.pauseFinancingRound(requestId);
+      warn("Financing round paused", { requestId });
       await refresh();
     } catch (err) {
-      setError(String(err));
+      const message = String(err);
+      setError(message);
+      logError("Pause round failed", { requestId, error: message });
     }
   }
 
   async function handleStaticFallback(requestId: string) {
+    info("Switching round to static reference fallback", { requestId });
     try {
       await api.staticFallbackFinancingRound(requestId);
+      info("Round moved to static reference fallback", { requestId });
       await refresh();
     } catch (err) {
-      setError(String(err));
+      const message = String(err);
+      setError(message);
+      logError("Static fallback failed", { requestId, error: message });
     }
   }
 
   async function handleExpire(requestId: string) {
+    info("Expiring financing round", { requestId });
     try {
       await api.expireFinancingRound(requestId);
+      warn("Financing round expired", { requestId });
       await refresh();
     } catch (err) {
-      setError(String(err));
+      const message = String(err);
+      setError(message);
+      logError("Expire round failed", { requestId, error: message });
     }
   }
 
@@ -206,7 +246,7 @@ export function SupplierFinancingPage() {
                   <Button
                     type="button"
                     size="sm"
-                    onClick={() => handlePostForBid(r.contractId)}
+                    onClick={() => handlePostForBid(r.contractId, r.receivableId)}
                     disabled={postingId === r.contractId}
                   >
                     {postingId === r.contractId ? "Posting…" : "Post for bid"}
@@ -467,6 +507,14 @@ export function SupplierFinancingPage() {
         )}
       </div>
       )}
+
+      <ActivityLogPanel
+        entries={logEntries}
+        title="Financing activity log"
+        emptyMessage="Round lifecycle actions and awards appear here."
+        onClear={clearLog}
+        maxHeight="14rem"
+      />
     </div>
   );
 }

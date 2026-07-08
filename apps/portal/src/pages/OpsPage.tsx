@@ -17,9 +17,11 @@ import type {
 } from "@meridian/shared-types";
 import { api } from "../api";
 import { usePageTab } from "../hooks/usePageTab";
+import { useActivityLog } from "../hooks/useActivityLog";
 import { Alert, EmptyState, InlineCode, PageHeader } from "../components/ui/Alert";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
+import { ActivityLogPanel } from "../components/ui/ActivityLogPanel";
 import { DataTable } from "../components/ui/DataTable";
 import { Dialog } from "../components/ui/Dialog";
 import { Card, Surface } from "../components/ui/Surface";
@@ -232,10 +234,32 @@ export function OpsPage() {
   const [submittingGrant, setSubmittingGrant] = useState(false);
   const [submittingObserver, setSubmittingObserver] = useState(false);
 
+  const {
+    entries: monitorLogEntries,
+    info: monitorInfo,
+    warn: monitorWarn,
+    error: monitorError,
+    debug: monitorDebug,
+    clear: clearMonitorLog,
+  } = useActivityLog("ops-monitors");
+  const {
+    entries: regulatorLogEntries,
+    info: regulatorInfo,
+    error: regulatorLogError,
+    clear: clearRegulatorLog,
+  } = useActivityLog("ops-regulator");
+  const {
+    entries: kybLogEntries,
+    info: kybInfo,
+    error: kybLogError,
+    clear: clearKybLog,
+  } = useActivityLog("ops-kyb");
+
   const refreshMonitors = useCallback(async () => {
     setLoadingMonitors(true);
     setSettlementError("");
     setOracleError("");
+    monitorInfo("Refreshing settlement and oracle monitors");
 
     const [settleResult, oracleResult] = await Promise.allSettled([
       api.getOpsSettlementFinality(),
@@ -244,32 +268,51 @@ export function OpsPage() {
 
     if (settleResult.status === "fulfilled") {
       setSettlement(settleResult.value.summary);
+      monitorDebug("Settlement finality loaded", {
+        total: settleResult.value.summary.total,
+      });
     } else {
       setSettlement(null);
-      setSettlementError(
+      const message =
         settleResult.reason instanceof Error
           ? settleResult.reason.message
-          : String(settleResult.reason)
-      );
+          : String(settleResult.reason);
+      setSettlementError(message);
+      monitorError("Settlement finality fetch failed", { error: message });
     }
 
     if (oracleResult.status === "fulfilled") {
-      setOracle(oracleResult.value);
+      const oracleStatus = oracleResult.value;
+      setOracle(oracleStatus);
+      if (oracleStatus.ok && oracleStatus.isFresh) {
+        monitorInfo("Oracle relay healthy", {
+          service: oracleStatus.service,
+          cached: oracleStatus.cached,
+        });
+      } else {
+        monitorWarn("Oracle relay degraded", {
+          ok: oracleStatus.ok,
+          isFresh: oracleStatus.isFresh,
+          lastError: oracleStatus.lastError,
+        });
+      }
     } else {
       setOracle(null);
-      setOracleError(
+      const message =
         oracleResult.reason instanceof Error
           ? oracleResult.reason.message
-          : String(oracleResult.reason)
-      );
+          : String(oracleResult.reason);
+      setOracleError(message);
+      monitorError("Oracle health fetch failed", { error: message });
     }
 
     setLoadingMonitors(false);
-  }, []);
+  }, [monitorInfo, monitorDebug, monitorWarn, monitorError]);
 
   const refreshRegulator = useCallback(async () => {
     setLoadingRegulator(true);
     setRegulatorError("");
+    regulatorInfo("Refreshing regulator grants and exposure rollups");
 
     try {
       const [grantsRes, exposureRes] = await Promise.all([
@@ -278,12 +321,18 @@ export function OpsPage() {
       ]);
       setGrants(grantsRes.grants);
       setRollups(exposureRes.rollups ?? []);
+      regulatorInfo("Regulator data loaded", {
+        grants: grantsRes.grants.length,
+        rollups: exposureRes.rollups?.length ?? 0,
+      });
     } catch (e) {
-      setRegulatorError(e instanceof Error ? e.message : String(e));
+      const message = e instanceof Error ? e.message : String(e);
+      setRegulatorError(message);
+      regulatorLogError("Regulator refresh failed", { error: message });
     } finally {
       setLoadingRegulator(false);
     }
-  }, []);
+  }, [regulatorInfo, regulatorLogError]);
 
   const refreshAll = useCallback(async () => {
     await Promise.all([refreshMonitors(), refreshRegulator()]);
@@ -297,8 +346,16 @@ export function OpsPage() {
     e.preventDefault();
     setSubmittingGrant(true);
     setActionError("");
+    regulatorInfo("Creating jurisdiction grant", {
+      grantId: grantForm.grantId,
+      jurisdiction: grantForm.jurisdiction,
+    });
     try {
       await api.createOpsRegulatorGrant({
+        grantId: grantForm.grantId,
+        jurisdiction: grantForm.jurisdiction,
+      });
+      regulatorInfo("Jurisdiction grant created on-ledger", {
         grantId: grantForm.grantId,
         jurisdiction: grantForm.jurisdiction,
       });
@@ -306,9 +363,25 @@ export function OpsPage() {
       setGrantDialogOpen(false);
       await refreshRegulator();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setActionError(message);
+      regulatorLogError("Grant creation failed", { error: message });
     } finally {
       setSubmittingGrant(false);
+    }
+  }
+
+  async function handleRevokeGrant(contractId: string, grantId: string) {
+    regulatorInfo("Revoking jurisdiction grant", { grantId, contractId });
+    setActionError("");
+    try {
+      await api.revokeOpsRegulatorGrant(contractId);
+      regulatorInfo("Jurisdiction grant revoked", { grantId });
+      await refreshRegulator();
+    } catch (err) {
+      const message = err instanceof Error ? err.message : String(err);
+      setActionError(message);
+      regulatorLogError("Grant revocation failed", { grantId, error: message });
     }
   }
 
@@ -317,15 +390,25 @@ export function OpsPage() {
     if (!observerForm.receivableContractId.trim()) return;
     setSubmittingObserver(true);
     setActionError("");
+    regulatorInfo("Granting per-receivable observer", {
+      receivableContractId: observerForm.receivableContractId.trim(),
+      jurisdiction: observerForm.jurisdiction,
+    });
     try {
       await api.grantRegulatorObserver(
         observerForm.receivableContractId.trim(),
         observerForm.jurisdiction
       );
+      regulatorInfo("Observer rights granted on receivable", {
+        receivableContractId: observerForm.receivableContractId.trim(),
+        jurisdiction: observerForm.jurisdiction,
+      });
       setObserverForm((f) => ({ ...f, receivableContractId: "" }));
       await refreshRegulator();
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setActionError(message);
+      regulatorLogError("Observer grant failed", { error: message });
     } finally {
       setSubmittingObserver(false);
     }
@@ -334,6 +417,11 @@ export function OpsPage() {
   async function handleKybVerify(e: React.FormEvent) {
     e.preventDefault();
     setActionError("");
+    kybInfo("Starting KYB verification", {
+      legalEntityId: kybForm.legalEntityId,
+      jurisdiction: kybForm.jurisdiction,
+      role: kybForm.role,
+    });
     try {
       const res = await api.verifyKyb({
         legalEntityId: kybForm.legalEntityId,
@@ -341,17 +429,25 @@ export function OpsPage() {
         requestedRoles: [kybForm.role],
       });
       setKybVerificationId(res.verificationId);
+      kybInfo("KYB verification started", { verificationId: res.verificationId });
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setActionError(message);
+      kybLogError("KYB verification start failed", { error: message });
     }
   }
 
   async function handleKybComplete(decision: "APPROVED" | "REJECTED") {
     if (!kybVerificationId) return;
     setActionError("");
+    kybInfo(`Completing KYB verification — ${decision}`, { verificationId: kybVerificationId });
     try {
       await api.completeKyb(kybVerificationId, decision);
       if (decision === "APPROVED" && kybForm.partyHint) {
+        kybInfo("Allocating party on approved verification", {
+          partyHint: kybForm.partyHint,
+          legalEntityId: kybForm.legalEntityId,
+        });
         await api.allocateParty({
           orgId: kybForm.partyHint,
           legalEntityId: kybForm.legalEntityId,
@@ -360,12 +456,18 @@ export function OpsPage() {
           jurisdiction: kybForm.jurisdiction,
           verificationId: kybVerificationId,
         });
+        kybInfo("Party allocated on topology", { partyHint: kybForm.partyHint });
       }
+      kybInfo(`KYB verification ${decision.toLowerCase()}`, {
+        verificationId: kybVerificationId,
+      });
       if (decision === "APPROVED") {
         setKybVerificationId("");
       }
     } catch (err) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      const message = err instanceof Error ? err.message : String(err);
+      setActionError(message);
+      kybLogError("KYB completion failed", { verificationId: kybVerificationId, error: message });
     }
   }
 
@@ -449,6 +551,14 @@ export function OpsPage() {
               />
             </Surface>
           </div>
+
+          <ActivityLogPanel
+            entries={monitorLogEntries}
+            title="Monitor activity log"
+            emptyMessage="Monitor refresh cycles and oracle health checks appear here."
+            onClear={clearMonitorLog}
+            maxHeight="14rem"
+          />
         </div>
       )}
 
@@ -542,9 +652,7 @@ export function OpsPage() {
                           type="button"
                           variant="destructive"
                           size="sm"
-                          onClick={() =>
-                            api.revokeOpsRegulatorGrant(g.contractId).then(refreshRegulator)
-                          }
+                          onClick={() => void handleRevokeGrant(g.contractId, g.grantId)}
                         >
                           Revoke
                         </Button>
@@ -642,6 +750,14 @@ export function OpsPage() {
               />
             </Surface>
           )}
+
+          <ActivityLogPanel
+            entries={regulatorLogEntries}
+            title="Regulator admin log"
+            emptyMessage="Grant, revoke, and observer actions appear here."
+            onClear={clearRegulatorLog}
+            maxHeight="14rem"
+          />
         </div>
       )}
 
@@ -744,6 +860,14 @@ export function OpsPage() {
               </div>
             </Surface>
           )}
+
+          <ActivityLogPanel
+            entries={kybLogEntries}
+            title="KYB workflow log"
+            emptyMessage="Verification starts, approvals, and party allocations appear here."
+            onClear={clearKybLog}
+            maxHeight="14rem"
+          />
         </div>
       )}
 

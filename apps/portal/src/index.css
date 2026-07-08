@@ -247,10 +247,10 @@
 /* 385×101 asset — cap height aligned to headline em-box */
 .landing-hero__canton-logo {
   display: block;
-  height: 0.82em;
+  height: 1em;
   width: auto;
   flex-shrink: 0;
-  transform: translateY(0.06em);
+  transform: translateY(0.18em);
 }
 
 .landing-hero__subtitle {

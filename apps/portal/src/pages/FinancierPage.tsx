@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bot, Gavel, Plus } from "lucide-react";
-import type { ActivityLogEntry, AgentRunStatus, BiddingMandateSummary } from "@meridian/shared-types";
+import type { AgentRunStatus, BiddingMandateSummary } from "@meridian/shared-types";
 import {
   api,
   isAgentRuntimeOnline,
@@ -10,6 +10,7 @@ import {
   type FinancierInvitation,
 } from "../api";
 import { usePageTab } from "../hooks/usePageTab";
+import { useActivityLog } from "../hooks/useActivityLog";
 import { Alert, EmptyState, PageHeader } from "../components/ui/Alert";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -20,7 +21,6 @@ import { Input } from "../components/ui/Input";
 import { PageTabBar } from "../components/ui/PageTabBar";
 import { CollapsibleSection } from "../components/ui/CollapsibleSection";
 import { ActivityLogPanel } from "../components/ui/ActivityLogPanel";
-import { createClientLogEntry, mergeActivityLogs } from "../lib/activity-log";
 import { cn, truncateParty } from "../lib/utils";
 
 function canSubmitBid(inv: FinancierInvitation) {
@@ -208,7 +208,21 @@ export function FinancierPage() {
   const [advanceByRound, setAdvanceByRound] = useState<Record<string, string>>({});
   const [discountByRound, setDiscountByRound] = useState<Record<string, string>>({});
   const [bidSubmitting, setBidSubmitting] = useState(false);
-  const [agentLogs, setAgentLogs] = useState<ActivityLogEntry[]>([]);
+  const {
+    entries: agentLogEntries,
+    info: agentInfo,
+    warn: agentWarn,
+    error: agentLogError,
+    appendMany: appendAgentLogs,
+    clear: clearAgentLog,
+  } = useActivityLog("financier-agent", 500);
+  const {
+    entries: dealFlowLogEntries,
+    info: dealFlowInfo,
+    warn: dealFlowWarn,
+    error: dealFlowLogError,
+    clear: clearDealFlowLog,
+  } = useActivityLog("financier-deal-flow");
   const [invitationSectionsOpen, setInvitationSectionsOpen] = useState({
     open: true,
     pending: false,
@@ -246,7 +260,7 @@ export function FinancierPage() {
       setMandates(mandateRes.mandates);
       setAgentStatus(agentRes);
       if (agentRes?.logs?.length) {
-        setAgentLogs((logs) => mergeActivityLogs(logs, agentRes.logs));
+        appendAgentLogs(agentRes.logs);
       }
       setPositions(
         (pos.positions ?? []).map((p) => ({
@@ -269,9 +283,13 @@ export function FinancierPage() {
       console.error("[meridian-financier] refresh failed", e);
       setError(String(e));
     }
-  }, []);
+  }, [appendAgentLogs]);
 
-  useNotifications("meridian-financier-a", refresh);
+  const onLedgerNotify = useCallback(() => {
+    dealFlowInfo("Ledger notification received — refreshing deal flow");
+  }, [dealFlowInfo]);
+
+  useNotifications("meridian-financier-a", refresh, { onNotify: onLedgerNotify });
   useEffect(() => {
     refresh();
   }, [refresh]);
@@ -285,6 +303,12 @@ export function FinancierPage() {
     const discountRate = discountByRound[requestContractId] ?? "0.05";
     const hasBid = myBids.some((b) => b.requestId === requestId);
     setBidSubmitting(true);
+    dealFlowInfo(hasBid ? "Replacing manual bid" : "Submitting manual bid", {
+      requestId,
+      advanceAmount,
+      discountRate,
+      useStaticReference,
+    });
     try {
       const submit = hasBid ? api.replaceFinancingBid : api.submitFinancingBid;
       const result = await submit(requestContractId, {
@@ -293,13 +317,23 @@ export function FinancierPage() {
         useStaticReference,
       });
       if (!result.oracleFresh) {
-        setError("Warning: oracle feed was stale — bid may be rejected on-ledger.");
+        const message = "Warning: oracle feed was stale — bid may be rejected on-ledger.";
+        setError(message);
+        dealFlowWarn("Bid submitted with stale oracle feed", { requestId });
       } else {
         setError("");
+        dealFlowInfo("Manual bid submitted on-ledger", {
+          requestId,
+          advanceAmount,
+          discountRate,
+          mode: useStaticReference ? "StaticReference" : "OracleAnchored",
+        });
       }
       await refresh();
     } catch (err) {
-      setError(String(err));
+      const message = String(err);
+      setError(message);
+      dealFlowLogError("Manual bid failed", { requestId, error: message });
     } finally {
       setBidSubmitting(false);
     }
@@ -329,47 +363,31 @@ export function FinancierPage() {
     setAgentTicking(true);
     setError("");
     const mandate = mandates.find((m) => m.agentEnabled && !m.revoked);
-    setAgentLogs((logs) =>
-      mergeActivityLogs(logs, [
-        createClientLogEntry("info", "Agent tick requested", {
-          detail: {
-            mandateId: mandate?.mandateId ?? null,
-            openInvitations: invitations.filter(
-              (i) => i.roundState === "RoundOpen" || i.roundState === "StaticReferenceFallback"
-            ).length,
-            existingBids: myBids.length,
-          },
-        }),
-      ])
-    );
+    agentInfo("Agent tick requested", {
+      mandateId: mandate?.mandateId ?? null,
+      openInvitations: invitations.filter(
+        (i) => i.roundState === "RoundOpen" || i.roundState === "StaticReferenceFallback"
+      ).length,
+      existingBids: myBids.length,
+    });
     try {
       const status = await api.triggerAgentTick();
       setAgentStatus(status);
-      setAgentLogs((logs) => mergeActivityLogs(logs, status.logs));
+      appendAgentLogs(status.logs);
       const submitted = status.decisions.filter((d) => d.submitted);
-      setAgentLogs((logs) =>
-        mergeActivityLogs(logs, [
-          createClientLogEntry(
-            submitted.length > 0 ? "info" : "warn",
-            `Tick finished — ${submitted.length}/${status.decisions.length} bids submitted`,
-            {
-              detail: {
-                durationMs: status.lastTickDurationMs,
-                lastError: status.lastError,
-              },
-            }
-          ),
-        ])
-      );
+      if (submitted.length > 0) {
+        agentInfo(`Tick finished — ${submitted.length}/${status.decisions.length} bids submitted`, {
+          durationMs: status.lastTickDurationMs,
+        });
+      } else {
+        agentWarn(`Tick finished — no bids submitted (${status.decisions.length} evaluated)`, {
+          durationMs: status.lastTickDurationMs,
+          lastError: status.lastError,
+        });
+      }
       await refresh();
     } catch (err) {
-      setAgentLogs((logs) =>
-        mergeActivityLogs(logs, [
-          createClientLogEntry("error", "Agent tick failed", {
-            detail: { error: String(err) },
-          }),
-        ])
-      );
+      agentLogError("Agent tick failed", { error: String(err) });
       setError(String(err));
     } finally {
       setAgentTicking(false);
@@ -485,10 +503,10 @@ export function FinancierPage() {
           </div>
 
           <ActivityLogPanel
-            entries={agentLogs}
+            entries={agentLogEntries}
             title="Agent run log"
             emptyMessage="No agent activity yet. Trigger a tick to evaluate open rounds and stream structured logs here."
-            onClear={() => setAgentLogs([])}
+            onClear={clearAgentLog}
             maxHeight="20rem"
           />
 
@@ -786,6 +804,14 @@ export function FinancierPage() {
             )}
           </div>
         )}
+
+        <ActivityLogPanel
+          entries={dealFlowLogEntries}
+          title="Deal flow activity log"
+          emptyMessage="Manual bid submissions and ledger notifications appear here."
+          onClear={clearDealFlowLog}
+          maxHeight="14rem"
+        />
       </div>
       )}
 

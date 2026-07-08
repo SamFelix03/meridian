@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import { FileText, Plus, Scale, ShieldCheck } from "lucide-react";
 import { api, useNotifications, type SupplierReceivable } from "../api";
 import { usePageTab } from "../hooks/usePageTab";
+import { useActivityLog } from "../hooks/useActivityLog";
 import { Alert, EmptyState, PageHeader } from "../components/ui/Alert";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -11,6 +12,7 @@ import { Card, Surface } from "../components/ui/Surface";
 import { Checkbox, Field, FieldDescription, FieldGroup, FieldLabel } from "../components/ui/Field";
 import { Input } from "../components/ui/Input";
 import { PageTabBar } from "../components/ui/PageTabBar";
+import { ActivityLogPanel } from "../components/ui/ActivityLogPanel";
 import { objectToRecordFields, RecordCardGrid } from "../components/ui/RecordCardGrid";
 import { truncateParty } from "../lib/utils";
 
@@ -46,6 +48,8 @@ export function SupplierPage() {
   const [consentGranted, setConsentGranted] = useState(true);
   const [maId, setMaId] = useState("MA-DEMO-001");
   const [allowsAssignment, setAllowsAssignment] = useState(true);
+  const { entries: logEntries, info, error: logError, clear: clearLog } =
+    useActivityLog("supplier-portal");
 
   const refresh = useCallback(async () => {
     try {
@@ -59,11 +63,17 @@ export function SupplierPage() {
       setProofs(portfolio.repaymentProofs ?? []);
       setError("");
     } catch (e) {
-      setError(String(e));
+      const message = String(e);
+      setError(message);
+      logError("Failed to refresh supplier data", { error: message });
     }
-  }, []);
+  }, [logError]);
 
-  useNotifications("meridian-supplier", refresh);
+  const onLedgerNotify = useCallback(() => {
+    info("Ledger notification received — refreshing supplier view");
+  }, [info]);
+
+  useNotifications("meridian-supplier", refresh, { onNotify: onLedgerNotify });
   useEffect(() => {
     refresh();
   }, [refresh]);
@@ -72,6 +82,7 @@ export function SupplierPage() {
     setProposing(true);
     setError("");
     setSuccess("");
+    info("Submitting invoice proposal", { faceValue, currency, dueDate, consentGranted });
     try {
       const result = await api.proposeInvoice({
         faceValue,
@@ -79,11 +90,18 @@ export function SupplierPage() {
         dueDate,
         consentGranted,
       });
+      info("Invoice proposed on-ledger", {
+        contractId: result.contractId,
+        faceValue,
+        currency,
+      });
       setSuccess(`Proposal created — contract ${result.contractId.slice(0, 24)}…`);
       setInvoiceFormToken((t) => t + 1);
       await refresh();
     } catch (err) {
-      setError(String(err));
+      const message = String(err);
+      setError(message);
+      logError("Invoice proposal failed", { error: message });
     } finally {
       setProposing(false);
     }
@@ -94,30 +112,38 @@ export function SupplierPage() {
     setCreatingPolicy(true);
     setError("");
     setSuccess("");
+    info("Registering consent policy", { masterAgreementId: maId, allowsAssignment });
     try {
       await api.createConsentPolicy({
         masterAgreementId: maId,
         allowsAssignment,
       });
+      info("Consent policy registered on-ledger", { masterAgreementId: maId });
       setSuccess(`Standing consent policy registered for ${maId}.`);
       setMaId(`MA-DEMO-${String(policies.length + 1).padStart(3, "0")}`);
       setRegisterOpen(false);
       await refresh();
     } catch (err) {
-      setError(String(err));
+      const message = String(err);
+      setError(message);
+      logError("Consent policy registration failed", { error: message });
     } finally {
       setCreatingPolicy(false);
     }
   }
 
-  async function handlePostForBid(contractId: string) {
+  async function handlePostForBid(contractId: string, receivableId: string) {
     setPostingId(contractId);
+    info("Posting receivable for bid", { receivableId, contractId });
     try {
       await api.postReceivableForBid(contractId);
+      info("Receivable posted for sealed-bid financing", { receivableId });
       await refresh();
       setError("");
     } catch (err) {
-      setError(String(err));
+      const message = String(err);
+      setError(message);
+      logError("Post for bid failed", { receivableId, error: message });
     } finally {
       setPostingId(null);
     }
@@ -189,7 +215,7 @@ export function SupplierPage() {
                       <Button
                         type="button"
                         size="sm"
-                        onClick={() => handlePostForBid(r.contractId)}
+                        onClick={() => handlePostForBid(r.contractId, r.receivableId)}
                         disabled={postingId === r.contractId}
                       >
                         {postingId === r.contractId ? "Posting…" : "Post for bid"}
@@ -353,6 +379,14 @@ export function SupplierPage() {
           </Card>
         </div>
       )}
+
+      <ActivityLogPanel
+        entries={logEntries}
+        title="Supplier activity log"
+        emptyMessage="Invoice proposals, consent policies, and financing posts appear here."
+        onClear={clearLog}
+        maxHeight="14rem"
+      />
     </div>
   );
 }

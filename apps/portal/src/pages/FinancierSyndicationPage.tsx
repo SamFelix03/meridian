@@ -8,6 +8,7 @@ import {
   type SyndicationOfferingSummary,
 } from "../api";
 import { usePageTab } from "../hooks/usePageTab";
+import { useActivityLog } from "../hooks/useActivityLog";
 import { Alert, EmptyState, PageHeader } from "../components/ui/Alert";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
@@ -16,6 +17,7 @@ import { Field, FieldGroup, FieldLabel } from "../components/ui/Field";
 import { Input } from "../components/ui/Input";
 import { CustomSelect } from "../components/ui/CustomSelect";
 import { PageTabBar } from "../components/ui/PageTabBar";
+import { ActivityLogPanel } from "../components/ui/ActivityLogPanel";
 import { truncateParty } from "../lib/utils";
 
 export function FinancierSyndicationPage() {
@@ -32,6 +34,8 @@ export function FinancierSyndicationPage() {
   const [shareBps, setShareBps] = useState("4000");
   const [discountRate, setDiscountRate] = useState("0.05");
   const [offeringBids, setOfferingBids] = useState<Record<string, string>>({});
+  const { entries: logEntries, info, error: logError, clear: clearLog } =
+    useActivityLog("financier-syndication");
 
   const refresh = useCallback(async () => {
     try {
@@ -74,11 +78,21 @@ export function FinancierSyndicationPage() {
       }
       setError("");
     } catch (e) {
-      setError(String(e));
+      const message = String(e);
+      setError(message);
+      logError("Failed to refresh syndication data", { error: message });
     }
-  }, [tab]);
+  }, [tab, logError]);
 
-  useNotifications(tab === "lead" ? "meridian-financier-a" : "meridian-financier-b", refresh);
+  const onLedgerNotify = useCallback(() => {
+    info("Ledger notification received — refreshing syndication desk");
+  }, [info]);
+
+  useNotifications(
+    tab === "lead" ? "meridian-financier-a" : "meridian-financier-b",
+    refresh,
+    { onNotify: onLedgerNotify }
+  );
   useEffect(() => {
     refresh();
   }, [refresh]);
@@ -90,48 +104,72 @@ export function FinancierSyndicationPage() {
     }
     const position = positions.find((p) => p.contractId === selectedReceivable);
     if (!position) return;
+    const offeringId = `SYN-UI-${Date.now()}`;
+    info("Opening syndication offering", {
+      offeringId,
+      receivableId: position.receivableId,
+      receivableCid: position.contractId,
+    });
     try {
       await api.openSyndicationOffering({
         receivableCid: position.contractId,
-        offeringId: `SYN-UI-${Date.now()}`,
+        offeringId,
       });
+      info("Syndication offering opened on-ledger", { offeringId, receivableId: position.receivableId });
       setError("");
       await refresh();
     } catch (err) {
-      setError(String(err));
+      const message = String(err);
+      setError(message);
+      logError("Open syndication offering failed", { error: message });
     }
   }
 
-  async function handleSubmitBid(offeringContractId: string, useStatic: boolean) {
+  async function handleSubmitBid(offeringContractId: string, offeringId: string, useStatic: boolean) {
+    info("Submitting syndication interest bid", {
+      offeringId,
+      offeringContractId,
+      shareBps,
+      discountRate,
+      useStaticReference: useStatic,
+    });
     try {
       await api.submitSyndicationBid(offeringContractId, {
         shareBps: Number(shareBps),
         discountRate,
         useStaticReference: useStatic,
       });
+      info("Syndication interest submitted on-ledger", { offeringId, shareBps });
       setError("");
       await refresh();
     } catch (err) {
-      setError(String(err));
+      const message = String(err);
+      setError(message);
+      logError("Syndication bid failed", { offeringId, error: message });
     }
   }
 
-  async function handleAward(offeringContractId: string) {
+  async function handleAward(offeringContractId: string, offeringId: string) {
     const bidCid = offeringBids[offeringContractId];
     if (!bidCid) {
       setError("Enter winning bid contract id");
       return;
     }
+    info("Awarding syndication bid", { offeringId, winningBidCid: bidCid });
     try {
       await api.awardSyndicationBid(offeringContractId, { winningBidCid: bidCid });
+      info("Syndication bid awarded on-ledger", { offeringId, winningBidCid: bidCid });
       setError("");
       await refresh();
     } catch (err) {
-      setError(String(err));
+      const message = String(err);
+      setError(message);
+      logError("Syndication award failed", { offeringId, error: message });
     }
   }
 
-  async function loadBids(offeringContractId: string) {
+  async function loadBids(offeringContractId: string, offeringId: string) {
+    info("Loading syndication bids", { offeringId, offeringContractId });
     try {
       const { bids } = await api.getSyndicationBids(offeringContractId);
       if (bids.length > 0) {
@@ -139,9 +177,18 @@ export function FinancierSyndicationPage() {
           ...prev,
           [offeringContractId]: bids[0]!.contractId,
         }));
+        info("Syndication bids loaded", {
+          offeringId,
+          count: bids.length,
+          topBidCid: bids[0]!.contractId,
+        });
+      } else {
+        info("No syndication bids found for offering", { offeringId });
       }
     } catch (err) {
-      setError(String(err));
+      const message = String(err);
+      setError(message);
+      logError("Load syndication bids failed", { offeringId, error: message });
     }
   }
 
@@ -221,7 +268,7 @@ export function FinancierSyndicationPage() {
                             type="button"
                             variant="secondary"
                             size="sm"
-                            onClick={() => loadBids(o.contractId)}
+                            onClick={() => loadBids(o.contractId, o.offeringId)}
                           >
                             Load bids
                           </Button>
@@ -236,7 +283,7 @@ export function FinancierSyndicationPage() {
                               }))
                             }
                           />
-                          <Button type="button" size="sm" onClick={() => handleAward(o.contractId)}>
+                          <Button type="button" size="sm" onClick={() => handleAward(o.contractId, o.offeringId)}>
                             <Award className="size-3.5" />
                             Award bid
                           </Button>
@@ -294,6 +341,7 @@ export function FinancierSyndicationPage() {
                             e.preventDefault();
                             handleSubmitBid(
                               inv.contractId,
+                              inv.offeringId,
                               inv.roundState === "StaticReferenceFallback"
                             );
                           }}
@@ -350,6 +398,14 @@ export function FinancierSyndicationPage() {
           </div>
         </>
       )}
+
+      <ActivityLogPanel
+        entries={logEntries}
+        title="Syndication activity log"
+        emptyMessage="Offering, bid, and award actions appear here."
+        onClear={clearLog}
+        maxHeight="14rem"
+      />
     </div>
   );
 }

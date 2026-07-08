@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import type {
   AgentRunStatus,
   BidComparisonRow,
@@ -462,8 +462,15 @@ export const api = {
     }),
 };
 
-export function useNotifications(orgId: string, onEvent: () => void): void {
+export function useNotifications(
+  orgId: string,
+  onEvent: () => void,
+  options?: { onNotify?: (detail: { orgId: string }) => void }
+): void {
   const wsUrl = import.meta.env.VITE_NOTIFICATIONS_WS ?? "ws://127.0.0.1:4020";
+  const onNotifyRef = useRef(options?.onNotify);
+  onNotifyRef.current = options?.onNotify;
+
   useEffect(() => {
     const wsTarget = `${wsUrl}/events?orgId=${encodeURIComponent(orgId)}`;
     apiDebugLog(`WebSocket connect ${wsTarget}`);
@@ -471,11 +478,12 @@ export function useNotifications(orgId: string, onEvent: () => void): void {
     ws.onopen = () => apiDebugLog(`WebSocket open org=${orgId}`);
     ws.onmessage = () => {
       apiDebugLog(`WebSocket event org=${orgId}`);
+      onNotifyRef.current?.({ orgId });
       onEvent();
     };
     ws.onerror = (ev) => apiDebugError(`WebSocket error org=${orgId}`, ev);
     ws.onclose = (ev) =>
       apiDebugLog(`WebSocket closed org=${orgId} code=${ev.code} reason=${ev.reason || "(none)"}`);
     return () => ws.close();
-  }, [orgId, onEvent]);
+  }, [orgId, onEvent, wsUrl]);
 }

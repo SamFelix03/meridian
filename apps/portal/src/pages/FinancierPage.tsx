@@ -1,17 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Bot, Gavel, Plus } from "lucide-react";
-import type { AgentRunStatus, BiddingMandateSummary } from "@meridian/shared-types";
+import type { ActivityLogEntry, AgentRunStatus, BiddingMandateSummary } from "@meridian/shared-types";
 import {
   api,
   isAgentRuntimeOnline,
-  logAgent,
   logAgentError,
   useNotifications,
   type BidSummary,
   type FinancierInvitation,
 } from "../api";
 import { usePageTab } from "../hooks/usePageTab";
-import { Alert, EmptyState, InlineCode, PageHeader } from "../components/ui/Alert";
+import { Alert, EmptyState, PageHeader } from "../components/ui/Alert";
 import { Badge } from "../components/ui/Badge";
 import { Button } from "../components/ui/Button";
 import { Card, Surface } from "../components/ui/Surface";
@@ -20,6 +19,8 @@ import { Checkbox, Field, FieldGroup, FieldLabel } from "../components/ui/Field"
 import { Input } from "../components/ui/Input";
 import { PageTabBar } from "../components/ui/PageTabBar";
 import { CollapsibleSection } from "../components/ui/CollapsibleSection";
+import { ActivityLogPanel } from "../components/ui/ActivityLogPanel";
+import { createClientLogEntry, mergeActivityLogs } from "../lib/activity-log";
 import { cn, truncateParty } from "../lib/utils";
 
 function canSubmitBid(inv: FinancierInvitation) {
@@ -207,6 +208,7 @@ export function FinancierPage() {
   const [advanceByRound, setAdvanceByRound] = useState<Record<string, string>>({});
   const [discountByRound, setDiscountByRound] = useState<Record<string, string>>({});
   const [bidSubmitting, setBidSubmitting] = useState(false);
+  const [agentLogs, setAgentLogs] = useState<ActivityLogEntry[]>([]);
   const [invitationSectionsOpen, setInvitationSectionsOpen] = useState({
     open: true,
     pending: false,
@@ -243,6 +245,9 @@ export function FinancierPage() {
       setMyBids(bids.bids);
       setMandates(mandateRes.mandates);
       setAgentStatus(agentRes);
+      if (agentRes?.logs?.length) {
+        setAgentLogs((logs) => mergeActivityLogs(logs, agentRes.logs));
+      }
       setPositions(
         (pos.positions ?? []).map((p) => ({
           receivableId: p.receivableId,
@@ -324,21 +329,47 @@ export function FinancierPage() {
     setAgentTicking(true);
     setError("");
     const mandate = mandates.find((m) => m.agentEnabled && !m.revoked);
-    logAgent("Trigger agent tick clicked", {
-      activeMandate: mandate?.mandateId ?? null,
-      openInvitations: invitations.filter(
-        (i) => i.roundState === "RoundOpen" || i.roundState === "StaticReferenceFallback"
-      ).length,
-      existingBids: myBids.length,
-    });
+    setAgentLogs((logs) =>
+      mergeActivityLogs(logs, [
+        createClientLogEntry("info", "Agent tick requested", {
+          detail: {
+            mandateId: mandate?.mandateId ?? null,
+            openInvitations: invitations.filter(
+              (i) => i.roundState === "RoundOpen" || i.roundState === "StaticReferenceFallback"
+            ).length,
+            existingBids: myBids.length,
+          },
+        }),
+      ])
+    );
     try {
       const status = await api.triggerAgentTick();
       setAgentStatus(status);
+      setAgentLogs((logs) => mergeActivityLogs(logs, status.logs));
       const submitted = status.decisions.filter((d) => d.submitted);
-      logAgent(`tick complete: ${submitted.length}/${status.decisions.length} bids submitted`);
+      setAgentLogs((logs) =>
+        mergeActivityLogs(logs, [
+          createClientLogEntry(
+            submitted.length > 0 ? "info" : "warn",
+            `Tick finished — ${submitted.length}/${status.decisions.length} bids submitted`,
+            {
+              detail: {
+                durationMs: status.lastTickDurationMs,
+                lastError: status.lastError,
+              },
+            }
+          ),
+        ])
+      );
       await refresh();
     } catch (err) {
-      logAgentError("triggerAgentTick failed", err);
+      setAgentLogs((logs) =>
+        mergeActivityLogs(logs, [
+          createClientLogEntry("error", "Agent tick failed", {
+            detail: { error: String(err) },
+          }),
+        ])
+      );
       setError(String(err));
     } finally {
       setAgentTicking(false);
@@ -397,33 +428,69 @@ export function FinancierPage() {
       {tab === "agent" && (
       <>
       <Surface title="Agent Bidding" emphasis>
-        <div className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2 text-sm">
-            <span className="text-muted-foreground">Agent runtime:</span>
-            <Badge variant={agentOnline ? "success" : "destructive"}>
-              {agentOnline ? "online (port 4025)" : "offline — run: pnpm agent-runtime"}
-            </Badge>
+        <div className="space-y-5">
+          {activeMandate ? (
+            <Card className="border-primary/30 bg-primary/5">
+              <div className="flex flex-wrap items-start justify-between gap-4">
+                <div className="space-y-3">
+                  <div>
+                    <p className="text-xs font-semibold uppercase tracking-wide text-primary">
+                      Active mandate
+                    </p>
+                    <p className="font-heading text-lg font-semibold text-foreground">
+                      {activeMandate.mandateId}
+                    </p>
+                  </div>
+                  <dl className="grid gap-x-6 gap-y-2 text-sm sm:grid-cols-2">
+                    <div>
+                      <dt className="text-muted-foreground">Max exposure</dt>
+                      <dd className="font-medium tabular-nums">{activeMandate.maxExposure}</dd>
+                    </div>
+                    <div>
+                      <dt className="text-muted-foreground">Min spread</dt>
+                      <dd className="font-medium tabular-nums">{activeMandate.minSpread}</dd>
+                    </div>
+                    <div className="sm:col-span-2">
+                      <dt className="text-muted-foreground">Model</dt>
+                      <dd className="font-medium">
+                        {agentStatus?.groqModel ?? "openai/gpt-oss-120b"}
+                      </dd>
+                    </div>
+                  </dl>
+                </div>
+                <Badge variant="success">Agent enabled</Badge>
+              </div>
+            </Card>
+          ) : (
+            <Alert>
+              No agent-enabled mandate. Create a mandate below and enable the agent, or turn on an
+              existing mandate.
+            </Alert>
+          )}
+
+          <div className="flex flex-wrap items-center gap-3">
+            <Button
+              type="button"
+              onClick={handleAgentTick}
+              disabled={agentTicking || !agentOnline || !activeMandate}
+            >
+              <Bot className="size-4" />
+              {agentTicking ? "Running agent tick…" : "Trigger agent tick"}
+            </Button>
+            {!agentOnline && (
+              <p className="text-sm text-muted-foreground">
+                Agent runtime offline — start with <code className="text-xs">pnpm agent-runtime</code>
+              </p>
+            )}
           </div>
-          <p className="text-sm text-muted-foreground">
-            Open DevTools Console and filter <InlineCode>[meridian-agent]</InlineCode> for tick logs.
-            Mandate-constrained agent uses Groq{" "}
-            <InlineCode>{agentStatus?.groqModel ?? "openai/gpt-oss-120b"}</InlineCode>; the ledger
-            enforces limits on <InlineCode>viaAgent</InlineCode> bids.
-          </p>
-          <p className="text-sm text-foreground">
-            Active mandate:{" "}
-            {activeMandate
-              ? `${activeMandate.mandateId} (max ${activeMandate.maxExposure}, min spread ${activeMandate.minSpread})`
-              : "none"}
-          </p>
-          <Button
-            type="button"
-            onClick={handleAgentTick}
-            disabled={agentTicking || !agentOnline}
-          >
-            <Bot className="size-4" />
-            {agentTicking ? "Running agent tick…" : "Trigger agent tick"}
-          </Button>
+
+          <ActivityLogPanel
+            entries={agentLogs}
+            title="Agent run log"
+            emptyMessage="No agent activity yet. Trigger a tick to evaluate open rounds and stream structured logs here."
+            onClear={() => setAgentLogs([])}
+            maxHeight="20rem"
+          />
 
           {agentStatus && (
             <div className="space-y-3 border-t border-border pt-4">

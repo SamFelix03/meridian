@@ -34,7 +34,7 @@ function resolveFinancierPartyId(): string {
 async function main(): Promise<void> {
   const groqApiKey = requireEnv("GROQ_API_KEY");
   const port = Number(process.env.AGENT_RUNTIME_PORT ?? 4025);
-  const pollMs = Number(process.env.AGENT_POLL_MS ?? 60_000);
+  const pollMs = Number(process.env.AGENT_POLL_MS ?? 0);
   const financierIndexerUrl =
     process.env.FINANCIER_INDEXER_URL ?? "http://127.0.0.1:4013";
   const supplierIndexerUrl =

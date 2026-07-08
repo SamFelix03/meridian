@@ -668,8 +668,8 @@
   top: 0;
   z-index: 2;
   height: var(--data-table-head-h);
-  background: color-mix(in oklch, var(--muted) 55%, var(--card));
-  box-shadow: 0 1px 0 color-mix(in oklch, var(--border) 95%, transparent);
+  background: var(--card);
+  box-shadow: 0 1px 0 var(--border);
   font-size: 0.75rem;
   font-weight: 600;
   letter-spacing: 0.02em;
@@ -728,6 +728,122 @@
   text-align: center;
   font-size: 0.75rem;
   color: var(--muted-foreground);
+}
+
+/* Activity log panel */
+.activity-log {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: var(--radius-sm);
+  border: 1px solid color-mix(in oklch, var(--border) 90%, transparent);
+  background: color-mix(in oklch, var(--background) 70%, var(--card));
+}
+
+.activity-log__header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 85%, transparent);
+  background: var(--card);
+  padding: 0.75rem 1rem;
+}
+
+.activity-log__title {
+  font-family: var(--font-heading);
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--foreground);
+}
+
+.activity-log__meta {
+  margin-top: 0.125rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.activity-log__viewport {
+  max-height: var(--activity-log-max-h, 18rem);
+  overflow: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+}
+
+.activity-log__empty {
+  padding: 1.5rem 1rem;
+}
+
+.activity-log__list {
+  margin: 0;
+  padding: 0.5rem 0;
+  list-style: none;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.45;
+}
+
+.activity-log__entry {
+  display: grid;
+  grid-template-columns: 4.75rem 3.25rem minmax(5rem, auto) 1fr;
+  gap: 0.5rem 0.75rem;
+  align-items: start;
+  padding: 0.375rem 1rem;
+  border-bottom: 1px solid color-mix(in oklch, var(--border) 35%, transparent);
+}
+
+.activity-log__entry:last-child {
+  border-bottom: none;
+}
+
+.activity-log__time {
+  color: var(--muted-foreground);
+  white-space: nowrap;
+}
+
+.activity-log__level {
+  font-weight: 700;
+  font-size: 0.6875rem;
+  letter-spacing: 0.04em;
+}
+
+.activity-log__level--debug {
+  color: var(--muted-foreground);
+}
+
+.activity-log__level--info {
+  color: var(--primary);
+}
+
+.activity-log__level--warn {
+  color: oklch(0.78 0.14 85);
+}
+
+.activity-log__level--error {
+  color: var(--destructive);
+}
+
+.activity-log__source {
+  color: color-mix(in oklch, var(--muted-foreground) 85%, var(--foreground));
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activity-log__message {
+  color: var(--foreground);
+  word-break: break-word;
+}
+
+.activity-log__detail {
+  grid-column: 1 / -1;
+  margin: 0.125rem 0 0;
+  padding: 0.5rem 0.625rem;
+  border-radius: var(--radius-sm);
+  background: color-mix(in oklch, var(--muted) 35%, transparent);
+  color: var(--muted-foreground);
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 /* Shrink-wrap surfaces around step forms (zklaim form-card--fit) */

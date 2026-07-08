@@ -248,6 +248,18 @@ export interface BiddingMandateSummary {
   revoked: boolean;
 }
 
+/** Structured activity log line for in-app observability panels. */
+export type ActivityLogLevel = "debug" | "info" | "warn" | "error";
+
+export interface ActivityLogEntry {
+  id: string;
+  timestamp: string;
+  level: ActivityLogLevel;
+  source: string;
+  message: string;
+  detail?: Record<string, unknown>;
+}
+
 /** Agent runtime tick status (off-ledger observability). */
 export interface AgentBidDecision {
   requestId: string;
@@ -268,6 +280,8 @@ export interface AgentRunStatus {
   adversarialMode: boolean;
   decisions: AgentBidDecision[];
   groqModel: string;
+  /** Rolling structured log history from the agent runtime. */
+  logs: ActivityLogEntry[];
 }
 
 /** Cap table entry for syndicated positions (§7.6). */

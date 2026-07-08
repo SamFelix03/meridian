@@ -206,6 +206,7 @@ function unavailableAgentStatus(reason: string): AgentRunStatus {
     adversarialMode: false,
     decisions: [],
     groqModel: "unavailable",
+    logs: [],
   };
 }
 

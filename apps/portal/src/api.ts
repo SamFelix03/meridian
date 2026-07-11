@@ -463,17 +463,27 @@ export const api = {
     }),
 };
 
+function defaultNotificationsWs(): string {
+  if (typeof window === "undefined") return "ws://127.0.0.1:4020";
+  const proto = window.location.protocol === "https:" ? "wss:" : "ws:";
+  return `${proto}//${window.location.host}/events`;
+}
+
 export function useNotifications(
   orgId: string,
   onEvent: () => void,
   options?: { onNotify?: (detail: { orgId: string }) => void }
 ): void {
-  const wsUrl = import.meta.env.VITE_NOTIFICATIONS_WS ?? "ws://127.0.0.1:4020";
+  const wsUrl =
+    import.meta.env.VITE_NOTIFICATIONS_WS ??
+    (import.meta.env.DEV ? "ws://127.0.0.1:4020" : defaultNotificationsWs());
   const onNotifyRef = useRef(options?.onNotify);
   onNotifyRef.current = options?.onNotify;
 
   useEffect(() => {
-    const wsTarget = `${wsUrl}/events?orgId=${encodeURIComponent(orgId)}`;
+    const wsTarget = wsUrl.includes("/events")
+      ? `${wsUrl}?orgId=${encodeURIComponent(orgId)}`
+      : `${wsUrl}/events?orgId=${encodeURIComponent(orgId)}`;
     apiDebugLog(`WebSocket connect ${wsTarget}`);
     const ws = new WebSocket(wsTarget);
     ws.onopen = () => apiDebugLog(`WebSocket open org=${orgId}`);

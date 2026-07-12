@@ -38,7 +38,6 @@ services/party-provisioner/data/
 # parties.devnet.json is version-controlled (DevNet source of truth)
 infra/manifests/parties.json
 *.log
-logs/
 
 # Test coverage
 coverage/
@@ -53,5 +52,8 @@ infra/localnet/
 # RedStone sparse clone (DARs built into vendor/redstone/dist via build-redstone-dars.sh)
 daml/vendor/redstone/redstone-oracles-monorepo/
 
-# Logs
+# Local tooling caches
 ref-ui/
+
+# Flow capture console dumps (keep JSON/MD under logs/)
+logs/*.console.txt

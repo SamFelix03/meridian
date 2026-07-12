@@ -27,6 +27,7 @@
     "test:phase3:stack": "tsx scripts/phase3-stack-e2e.ts",
     "test:phase4:devnet": "tsx scripts/phase4-devnet-integration.ts",
     "test:phase4:stack": "tsx scripts/phase4-stack-e2e.ts",
+    "capture:flow:logs": "tsx scripts/capture-full-flow-logs.ts",
     "test:phase6:devnet": "tsx scripts/phase6-devnet-integration.ts",
     "test:phase6:stack": "tsx scripts/phase6-stack-e2e.ts",
     "test:phase7:devnet": "tsx scripts/phase7-devnet-integration.ts",

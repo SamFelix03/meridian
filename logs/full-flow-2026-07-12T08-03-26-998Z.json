@@ -1,0 +1,265 @@
+{
+  "runId": "2026-07-12T08-03-26-998Z",
+  "startedAt": "2026-07-12T08:03:26.998Z",
+  "finishedAt": "2026-07-12T08:04:14.937Z",
+  "environment": "seaport-devnet",
+  "explorerBase": "https://lighthouse.devnet.cantonloop.com",
+  "parties": {
+    "supplier": "meridian-supplier-1::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8",
+    "buyer": "meridian-buyer-1::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8",
+    "financierA": "meridian-financier-a::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8",
+    "financierB": "meridian-financier-b::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8",
+    "platformOperator": "meridian-platform-operator-1::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8",
+    "registry": "meridian-registry-1::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8"
+  },
+  "steps": [
+    {
+      "step": 1,
+      "name": "Propose invoice",
+      "description": "Supplier creates ReceivableProposal with inline assignment consent.",
+      "actAs": [
+        "meridian-supplier-1::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8"
+      ],
+      "updateId": "1220dc0cc03c4a6ee097d5cdd048fb365a847d018b2723ddad30e967358d25b84229",
+      "explorerUrl": "https://lighthouse.devnet.cantonloop.com/transactions/1220dc0cc03c4a6ee097d5cdd048fb365a847d018b2723ddad30e967358d25b84229",
+      "contractIds": {
+        "proposalCid": "0069068edee7a6bc01041aa5aca6615b410057fd107588ae315d6423affa5452cdca12122010d4d67740ca977d319e0a03d4228ded46b73d36765bcc4b5ef862436db801ba"
+      },
+      "recordTime": "2026-07-12T08:03:29.354298Z",
+      "status": "ok"
+    },
+    {
+      "step": 2,
+      "name": "Co-sign and issue receivable",
+      "description": "Buyer co-signs proposal → Receivable issued (Issued state).",
+      "actAs": [
+        "meridian-buyer-1::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8"
+      ],
+      "updateId": "12208282a0d0e85f3d10811d470cedec11e2f94788183d3355cedb457d87424f1e6b",
+      "explorerUrl": "https://lighthouse.devnet.cantonloop.com/transactions/12208282a0d0e85f3d10811d470cedec11e2f94788183d3355cedb457d87424f1e6b",
+      "contractIds": {
+        "receivableCid": "00821cf5418793762ada1057aff43388c0f02dcef6777edde75f22a5e693e2d2f4ca121220034663d63659b48482f19649599a7f8efc5f614934314090a936e997c15391fb"
+      },
+      "recordTime": "2026-07-12T08:03:31.826167Z",
+      "status": "ok"
+    },
+    {
+      "step": 3,
+      "name": "Post receivable for bid",
+      "description": "Supplier marks receivable PostedForBid.",
+      "actAs": [
+        "meridian-supplier-1::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8"
+      ],
+      "updateId": "1220575287c668eef94db6cabc08e7e952ebcee27c50386373db8afc1e584fe8d4c3",
+      "explorerUrl": "https://lighthouse.devnet.cantonloop.com/transactions/1220575287c668eef94db6cabc08e7e952ebcee27c50386373db8afc1e584fe8d4c3",
+      "contractIds": {
+        "postedReceivableCid": "003b57a63c2e2cdb8c85385308fe929dacc7777ddb270c05225c5567a113055c54ca121220fd089c37957530159f19cb18ee382c480aaa8ec06df825f7d9d6eac92f255d6f"
+      },
+      "recordTime": "2026-07-12T08:03:34.644139Z",
+      "status": "ok"
+    },
+    {
+      "step": 4,
+      "name": "Create financing round factory",
+      "description": "Supplier creates FinancingRoundFactory.",
+      "actAs": [
+        "meridian-supplier-1::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8"
+      ],
+      "updateId": "12201e4c850c28af3cdbafc825799dec00728db2443c19721301555e192f3dcc5339",
+      "explorerUrl": "https://lighthouse.devnet.cantonloop.com/transactions/12201e4c850c28af3cdbafc825799dec00728db2443c19721301555e192f3dcc5339",
+      "contractIds": {
+        "financingFactoryCid": "00cba9e8d140cd02a3850198ce9177441ca9c1e4d81649d43d8170aaa7012c96c1ca1212206e5d036c81224171fc33a67bb76e333b644b70c1f654d6180576197ea5e99785"
+      },
+      "recordTime": "2026-07-12T08:03:37.229962Z",
+      "status": "ok"
+    },
+    {
+      "step": 5,
+      "name": "Open sealed-bid financing round",
+      "description": "Supplier opens FinancingRequest inviting Financier A (oracle-anchored band).",
+      "actAs": [
+        "meridian-supplier-1::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8"
+      ],
+      "updateId": "12209ceb5cf17218a8c77aa4df2fcba29f3bea786a3d89c8783347562b085688eaf2",
+      "explorerUrl": "https://lighthouse.devnet.cantonloop.com/transactions/12209ceb5cf17218a8c77aa4df2fcba29f3bea786a3d89c8783347562b085688eaf2",
+      "contractIds": {
+        "financingRequestCid": "00120b4163814c6de6c49066e2cc0694500462ed822b3f2625fa16391a3e74da5aca1212200699f967a347bfab23b2b06fae5f9c8c5c8456f046abd703401f0d592e51b25b"
+      },
+      "recordTime": "2026-07-12T08:03:39.691477Z",
+      "status": "ok"
+    },
+    {
+      "step": 6,
+      "name": "Submit sealed bid (Financier A)",
+      "description": "Financier A submits oracle-anchored Bid (supplier-only observer).",
+      "actAs": [
+        "meridian-financier-a::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8"
+      ],
+      "updateId": "122015e5e134a24ca0842ddbe483821aca41d737db6c0537bd2487d88ea2d74492c0",
+      "explorerUrl": "https://lighthouse.devnet.cantonloop.com/transactions/122015e5e134a24ca0842ddbe483821aca41d737db6c0537bd2487d88ea2d74492c0",
+      "contractIds": {
+        "bidCid": "00e9720037cf55e177a270d3d46395e903897bfeeb8b1c79439771ea4ad03f9b88ca1212208e89c573473948b066d431ba7c5e6ae50e3110462a7ed98967d36c059415a853"
+      },
+      "recordTime": "2026-07-12T08:03:43.402099Z",
+      "status": "ok"
+    },
+    {
+      "step": 7,
+      "name": "CIP-56 allocate MUSD advance",
+      "description": "Financier + registry create locked MusdAllocation for the advance amount.",
+      "actAs": [
+        "meridian-financier-a::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8",
+        "meridian-registry-1::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8"
+      ],
+      "updateId": "122063c53adcc834a1353252d97c1c75e361058dbafe6b314f9a41666720b7c5e041",
+      "explorerUrl": "https://lighthouse.devnet.cantonloop.com/transactions/122063c53adcc834a1353252d97c1c75e361058dbafe6b314f9a41666720b7c5e041",
+      "contractIds": {
+        "allocationCid": "0061eef9d5fdd743e53f82fd228d9cf2127770f54a6a9d73f2b6225caf2ca7e5a5ca121220f563b8da80722af1a2c42f49534a91e03b56ecb37ee6c5292dd3437eacf442fe"
+      },
+      "recordTime": "2026-07-12T08:03:47.276273Z",
+      "status": "ok"
+    },
+    {
+      "step": 8,
+      "name": "AwardBid atomic DvP",
+      "description": "Supplier + financier: execute allocation, ApplyFunding, close bids, write SettlementAuditRecord.",
+      "actAs": [
+        "meridian-supplier-1::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8",
+        "meridian-financier-a::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8"
+      ],
+      "updateId": "122094109e36c5696c62b2cc4755c9f10315d34da234b0c0247522c4a85dfbb4dbf1",
+      "explorerUrl": "https://lighthouse.devnet.cantonloop.com/transactions/122094109e36c5696c62b2cc4755c9f10315d34da234b0c0247522c4a85dfbb4dbf1",
+      "contractIds": {
+        "fundedReceivableCid": "0050c5af3ea995a28a0dfb18ed455aa8b9c0cb70f890319264dd03dd2535c9d417ca12122074a4b040241417ff33cc76cf820ffaf37c2c6bc9edfa9cdc3871344b15a36058",
+        "bidCid": "00e9720037cf55e177a270d3d46395e903897bfeeb8b1c79439771ea4ad03f9b88ca1212208e89c573473948b066d431ba7c5e6ae50e3110462a7ed98967d36c059415a853",
+        "financingRequestCid": "00b421a96244d5721fa3d7921f8ac4849ca4f5a96d32115ef0eaf5eaca8993ea03ca121220c49fb8d41bb34b6b9f8bd15fd1e07e696f6676e13d8f12a289fb4d0945ac1538"
+      },
+      "recordTime": "2026-07-12T08:03:49.839291Z",
+      "status": "ok"
+    },
+    {
+      "step": 9,
+      "name": "Create syndication factory",
+      "description": "Lead financier creates SyndicationFactory.",
+      "actAs": [
+        "meridian-financier-a::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8"
+      ],
+      "updateId": "12203a5516737d2a50741b5d9662939c7161cb5926b0928c844361ea719da43ebcd0",
+      "explorerUrl": "https://lighthouse.devnet.cantonloop.com/transactions/12203a5516737d2a50741b5d9662939c7161cb5926b0928c844361ea719da43ebcd0",
+      "contractIds": {
+        "syndicationFactoryCid": "00f40ef8063dbfb6be29234cf9cfb505e9508e0e7b53cbaf10dc8d0a53b77040acca121220b8841350a9ae3552522fec1a7ca76968557f3c3eada8143b333eb15a58ff237d"
+      },
+      "recordTime": "2026-07-12T08:03:52.360988Z",
+      "status": "ok"
+    },
+    {
+      "step": 10,
+      "name": "Open syndication offering",
+      "description": "Lead opens SyndicationOffering inviting Financier B (buyer/supplier never observers).",
+      "actAs": [
+        "meridian-financier-a::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8"
+      ],
+      "updateId": "1220048aa75686f78f3cd26184a8220563a363df9062c842dbc1f90dc4bce96a1f8f",
+      "explorerUrl": "https://lighthouse.devnet.cantonloop.com/transactions/1220048aa75686f78f3cd26184a8220563a363df9062c842dbc1f90dc4bce96a1f8f",
+      "contractIds": {
+        "offeringCid": "008b4518f1713e955216ad3cba5fcc528f80595032f4a470c91a434ab3223acf5aca1212200f93b37341e2fc8283bb6fafd3c8395598828e64f6faae72a881b6e093f5f621"
+      },
+      "recordTime": "2026-07-12T08:03:54.832889Z",
+      "status": "ok"
+    },
+    {
+      "step": 11,
+      "name": "Submit sealed syndication bid (Financier B)",
+      "description": "Participant submits SyndicationBid (lead-only observer).",
+      "actAs": [
+        "meridian-financier-b::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8"
+      ],
+      "updateId": "1220752c72235ca083ffed2c129ceedfa0d53296755990d4b89b51e7a8790921a2b2",
+      "explorerUrl": "https://lighthouse.devnet.cantonloop.com/transactions/1220752c72235ca083ffed2c129ceedfa0d53296755990d4b89b51e7a8790921a2b2",
+      "contractIds": {
+        "syndicationBidCid": "003472560f3867fdbdbcd22f637f7a3f2734ed2e0ac0b91b619619a8d935fa9c40ca1212203210c3d039a74351e05d61800669d2fde92e2601fdc226f29980d6c83f965790"
+      },
+      "recordTime": "2026-07-12T08:03:57.862071Z",
+      "status": "ok"
+    },
+    {
+      "step": 12,
+      "name": "Award syndication (participation interest)",
+      "description": "Lead + participant award → ParticipationInterest + PartiallySyndicated receivable.",
+      "actAs": [
+        "meridian-financier-a::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8",
+        "meridian-financier-b::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8"
+      ],
+      "updateId": "1220493276fa84d862c82105d20658e8b722f51d08e8b43a110a7fef60ace1f3d542",
+      "explorerUrl": "https://lighthouse.devnet.cantonloop.com/transactions/1220493276fa84d862c82105d20658e8b722f51d08e8b43a110a7fef60ace1f3d542",
+      "contractIds": {
+        "syndicatedReceivableCid": "0096d84128e7e7fbc019e3f8ec34c040f84a918dd1566486871f09e223ac580198ca121220efbb13591d224aa4d72c680e064e34e0cdaeadaa4c676e5d7a0dad82faf6cfc3",
+        "participationInterestCid": "007908b0448e793d313e5cb4ff9198717cf085b628ec6962521b927bb549008e6dca121220df8cf6c6ab9d3a2f02d2a992283e1bcf1b9715563bdf889182557add049aa1e0"
+      },
+      "recordTime": "2026-07-12T08:04:01.683952Z",
+      "status": "ok"
+    },
+    {
+      "step": 13,
+      "name": "CIP-56 waterfall allocation → meridian-financier-b",
+      "description": "Buyer allocates 800 MUSD to meridian-financier-b for syndicated repayment waterfall.",
+      "actAs": [
+        "meridian-buyer-1::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8",
+        "meridian-registry-1::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8"
+      ],
+      "updateId": "12206c008e53ba4f715939a657fac693ea1b6d317e2d232592e0fcf5598415fefc39",
+      "explorerUrl": "https://lighthouse.devnet.cantonloop.com/transactions/12206c008e53ba4f715939a657fac693ea1b6d317e2d232592e0fcf5598415fefc39",
+      "contractIds": {
+        "allocationCid": "00ac0dfd9a804028c7497f0c57d1eef80a2585a0c4ebd5b9be702c4e68282ff4a5ca121220da0a7b22e70b50802aaa35da079ad4d28351e90b1cf0d83eb57792cc8a21612b",
+        "receiver": "meridian-financier-b::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8",
+        "amount": "800"
+      },
+      "recordTime": "2026-07-12T08:04:05.668306Z",
+      "status": "ok"
+    },
+    {
+      "step": 14,
+      "name": "CIP-56 waterfall allocation → meridian-financier-a",
+      "description": "Buyer allocates 1200 MUSD to meridian-financier-a for syndicated repayment waterfall.",
+      "actAs": [
+        "meridian-buyer-1::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8",
+        "meridian-registry-1::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8"
+      ],
+      "updateId": "1220e39209aec219527a6c79b6cccb6d59a8b7e248ff3f8523984433f7d08f7b4f06",
+      "explorerUrl": "https://lighthouse.devnet.cantonloop.com/transactions/1220e39209aec219527a6c79b6cccb6d59a8b7e248ff3f8523984433f7d08f7b4f06",
+      "contractIds": {
+        "allocationCid": "0030e78c1fccbbf1816096a8991e4b7c3b785612bf243e1378119d165481355c10ca121220130a4a4e79270e6613e30b5f0e595bf4ed944ab9c46ea0ec19dde9379515d217",
+        "receiver": "meridian-financier-a::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8",
+        "amount": "1200"
+      },
+      "recordTime": "2026-07-12T08:04:08.527983Z",
+      "status": "ok"
+    },
+    {
+      "step": 15,
+      "name": "Waterfall RepayWithProof",
+      "description": "Buyer + lead + supplier + participant: execute repayment allocations and create RepaymentProof.",
+      "actAs": [
+        "meridian-buyer-1::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8",
+        "meridian-financier-a::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8",
+        "meridian-supplier-1::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8",
+        "meridian-financier-b::1220a14ca128063b8dc9d1ebb0bd22633be9f2168500f4dbc1ecaeb1855b14e5acf8"
+      ],
+      "updateId": "1220b852a2748e345ea8a274a5b6d29d37889edd5655fa5ae5bf71c944cee716e97c",
+      "explorerUrl": "https://lighthouse.devnet.cantonloop.com/transactions/1220b852a2748e345ea8a274a5b6d29d37889edd5655fa5ae5bf71c944cee716e97c",
+      "contractIds": {
+        "repaidReceivableCid": "0012b1af725d9dc160b1af013d2e859a0a0a8d78635c1fb56f42df64819ecc29faca121220552754bd74f6fbe34a8c84c245481530fffecfca5991077f118d96697434597e",
+        "repaymentProofCid": "00710c827c1bec19409e5bdf2f19562ef3ac83d7d63e47da5f9d4f04e9cb10e66bca12122029753f76decd7e0e23a37dbf152797ad9ed73fa19932dd5da35f247e1cf46df2"
+      },
+      "recordTime": "2026-07-12T08:04:11.498606Z",
+      "status": "ok"
+    }
+  ],
+  "summary": {
+    "totalSteps": 15,
+    "transactionsCaptured": 15,
+    "faceValue": "2000",
+    "advance": "1500",
+    "participantShareBps": 4000
+  }
+}

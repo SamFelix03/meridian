@@ -2,7 +2,14 @@
 
 > Turn unpaid invoices into immediate cash through sealed-bid financing — syndicate positions privately — settle atomically on Canton.
 
-Privacy-native invoice financing and syndication on **Canton Network**. Suppliers run sealed-bid rounds among invited financiers, receive MUSD at award, and lead financiers can syndicate positions privately — competitors never see each other's bids, buyers never see discount rates, and assignment never diverges from payment.
+**Meridian** is a privacy-native **invoice financing** and **syndication** exchange on **Canton Network**.
+
+- **Sealed-bid primary market** — suppliers invite financiers; competitors never see each other’s bids
+- **Oracle-anchored pricing** — every bid tied to live, verified reference rates (SOFR)
+- **Atomic CIP-56 settlement** — MUSD advance and payee assignment commit together, or not at all
+- **Private syndication** — lead financiers lay off risk without involving buyer or supplier
+- **Buyer-blind economics** — buyers see who to pay and how much — never discount rates or that financing occurred
+- **Ledger-enforced privacy** — visibility is structural (signatory / observer / interface views), not UI filtering
 
 **Stack:** Daml · Canton · CIP-56 MUSD · RedStone SOFR oracle · React portals · 5North Seaport DevNet
 
@@ -12,14 +19,99 @@ Privacy-native invoice financing and syndication on **Canton Network**. Supplier
 
 | Resource | Link |
 |----------|------|
-| Demo video | `[INSERT: Demo video URL]` |
-| Live app | `[INSERT: Live app URL]` |
+| Demo video | [View Here](https://www.youtube.com/watch?v=e8kpeoTvhj0) |
+| Live app | [View Here](https://meridian-canton.up.railway.app/) |
 | Pitch deck | [View Here](https://meridian-pitch.pages.dev) |
-| Sample Canton transaction | `[INSERT: Sample Canton tx URL]` |
-| Product specification | [docs/MERIDIAN_PRD_AND_IDEA_DOCUMENT.md](docs/MERIDIAN_PRD_AND_IDEA_DOCUMENT.md) |
-| Engineering phase plan | [docs/phaseDocs.md](docs/phaseDocs.md) |
-| DevNet access (operators) | [docs/devnet.md](docs/devnet.md) |
-| Pitch (local) | [pitch/index.html](pitch/index.html) |
+| **Full flow transaction logs** | [logs/TRANSACTIONS.md](https://github.com/Marshal-AM/meridian/blob/main/logs/TRANSACTIONS.md) · [logs/full-flow-latest.md](https://github.com/Marshal-AM/meridian/blob/main/logs/full-flow-latest.md) · [logs/](https://github.com/Marshal-AM/meridian/tree/main/logs) |
+
+### Live DevNet transactions (latest full-flow run)
+
+Captured on Seaport DevNet (`2026-07-12`). Every step below is a real Ledger API `updateId` with a Lighthouse explorer link. Full detail: [logs/TRANSACTIONS.md](https://github.com/Marshal-AM/meridian/blob/main/logs/TRANSACTIONS.md).
+
+| # | Step | Explorer |
+|---|------|----------|
+| 1 | Propose invoice | [View](https://lighthouse.devnet.cantonloop.com/transactions/1220dc0cc03c4a6ee097d5cdd048fb365a847d018b2723ddad30e967358d25b84229) |
+| 2 | Co-sign and issue receivable | [View](https://lighthouse.devnet.cantonloop.com/transactions/12208282a0d0e85f3d10811d470cedec11e2f94788183d3355cedb457d87424f1e6b) |
+| 3 | Post receivable for bid | [View](https://lighthouse.devnet.cantonloop.com/transactions/1220575287c668eef94db6cabc08e7e952ebcee27c50386373db8afc1e584fe8d4c3) |
+| 4 | Create financing round factory | [View](https://lighthouse.devnet.cantonloop.com/transactions/12201e4c850c28af3cdbafc825799dec00728db2443c19721301555e192f3dcc5339) |
+| 5 | Open sealed-bid financing round | [View](https://lighthouse.devnet.cantonloop.com/transactions/12209ceb5cf17218a8c77aa4df2fcba29f3bea786a3d89c8783347562b085688eaf2) |
+| 6 | Submit sealed bid (Financier A) | [View](https://lighthouse.devnet.cantonloop.com/transactions/122015e5e134a24ca0842ddbe483821aca41d737db6c0537bd2487d88ea2d74492c0) |
+| 7 | CIP-56 allocate MUSD advance | [View](https://lighthouse.devnet.cantonloop.com/transactions/122063c53adcc834a1353252d97c1c75e361058dbafe6b314f9a41666720b7c5e041) |
+| 8 | **AwardBid atomic DvP** | [View](https://lighthouse.devnet.cantonloop.com/transactions/122094109e36c5696c62b2cc4755c9f10315d34da234b0c0247522c4a85dfbb4dbf1) |
+| 9 | Create syndication factory | [View](https://lighthouse.devnet.cantonloop.com/transactions/12203a5516737d2a50741b5d9662939c7161cb5926b0928c844361ea719da43ebcd0) |
+| 10 | Open syndication offering | [View](https://lighthouse.devnet.cantonloop.com/transactions/1220048aa75686f78f3cd26184a8220563a363df9062c842dbc1f90dc4bce96a1f8f) |
+| 11 | Submit sealed syndication bid (Financier B) | [View](https://lighthouse.devnet.cantonloop.com/transactions/1220752c72235ca083ffed2c129ceedfa0d53296755990d4b89b51e7a8790921a2b2) |
+| 12 | Award syndication (participation interest) | [View](https://lighthouse.devnet.cantonloop.com/transactions/1220493276fa84d862c82105d20658e8b722f51d08e8b43a110a7fef60ace1f3d542) |
+| 13 | CIP-56 waterfall allocation → Financier B | [View](https://lighthouse.devnet.cantonloop.com/transactions/12206c008e53ba4f715939a657fac693ea1b6d317e2d232592e0fcf5598415fefc39) |
+| 14 | CIP-56 waterfall allocation → Financier A | [View](https://lighthouse.devnet.cantonloop.com/transactions/1220e39209aec219527a6c79b6cccb6d59a8b7e248ff3f8523984433f7d08f7b4f06) |
+| 15 | Waterfall RepayWithProof | [View](https://lighthouse.devnet.cantonloop.com/transactions/1220b852a2748e345ea8a274a5b6d29d37889edd5655fa5ae5bf71c944cee716e97c) |
+
+---
+
+## Important Files (contracts, services, manifests)
+
+GitHub links into this repository. Start here when reviewing the implementation.
+
+### Daml — core packages
+
+| File | What it is |
+|------|------------|
+| [PartyRegistry.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-core/daml/Meridian/Topology/PartyRegistry.daml) | `OrgRole` enum + KYB-gated `PartyRegistry` template |
+| [Receivable.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Receivable.daml) | Tokenized invoice lifecycle, funding, syndication, repayment |
+| [Interfaces.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Interfaces.daml) | `IBuyerView` … `IRegulatorView` privacy projections |
+| [ReceivableProposal.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/ReceivableProposal.daml) | Supplier draft → buyer `CoSignAndIssue` |
+| [AssignmentConsentPolicy.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/AssignmentConsentPolicy.daml) | Standing buyer consent to assign at award |
+| [FinancingRequest.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRequest.daml) | Sealed-bid room + atomic `AwardBid` DvP |
+| [Bid.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/Bid.daml) | Sealed bid — financier signatory, supplier-only observer |
+| [OracleValidation.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/OracleValidation.daml) | On-ledger RedStone / SOFR bid validation |
+| [BiddingMandate.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/BiddingMandate.daml) | On-ledger agent risk limits |
+| [MandateValidation.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/MandateValidation.daml) | Mandate constraint checks at bid time |
+| [SyndicationOffering.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/SyndicationOffering.daml) | Secondary sealed-bid room (buyer/supplier never observers) |
+| [SyndicationBid.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/SyndicationBid.daml) | Sealed syndication bid — lead-only observer |
+| [ParticipationInterest.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/ParticipationInterest.daml) | Pass-through repayment slice |
+| [Waterfall.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/Waterfall.daml) | Pro-rata repayment split |
+| [Settlement/Types.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Settlement/Types.daml) | `Atomic` / `ReassignmentMediated` / `EscrowFallback` |
+| [SettlementAuditRecord.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Settlement/SettlementAuditRecord.daml) | Immutable finality audit at award |
+| [RepaymentProof.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/RepaymentProof.daml) | Buyer payoff proof (no financing fields) |
+| [RegulatorJurisdictionGrant.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Compliance/RegulatorJurisdictionGrant.daml) | Scoped regulator observer grant |
+| [Registry.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Registry.daml) | `CashRegistry` + CIP-56 `MusdRules` factories |
+| [Holding.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Holding.daml) | CIP-56 `MusdHolding` |
+| [Allocation.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Allocation.daml) | CIP-56 locked DvP allocation |
+| [Transfer.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Transfer.daml) | CIP-56 transfer instruction |
+
+### Off-ledger services & packages
+
+| File | What it is |
+|------|------------|
+| [portal-api/src/index.ts](https://github.com/Marshal-AM/meridian/blob/main/services/portal-api/src/index.ts) | BFF — command submission + indexer proxy |
+| [ledger-client/commands.ts](https://github.com/Marshal-AM/meridian/blob/main/packages/ledger-client/src/commands.ts) | Daml command builders (`AwardBid`, CIP-56 allocate, …) |
+| [shared-types/src/index.ts](https://github.com/Marshal-AM/meridian/blob/main/packages/shared-types/src/index.ts) | `OrgRole`, projections, `SettlementFinality` TS mirrors |
+| [oracle-relay-service.ts](https://github.com/Marshal-AM/meridian/blob/main/services/oracle-relay/src/oracle-relay-service.ts) | RedStone SOFR cache for bids |
+| [registry-api/src/index.ts](https://github.com/Marshal-AM/meridian/blob/main/services/registry-api/src/index.ts) | CIP-56 MUSD discovery for wallets |
+| [replay-indexer.ts](https://github.com/Marshal-AM/meridian/blob/main/services/indexer/src/replay-indexer.ts) | Per-party ledger replay → projections |
+| [agent-loop.ts](https://github.com/Marshal-AM/meridian/blob/main/services/agent-runtime/src/agent-loop.ts) | Mandate-constrained AI bidder |
+| [apps/portal/src/lib/roles.ts](https://github.com/Marshal-AM/meridian/blob/main/apps/portal/src/lib/roles.ts) | Demo role chooser (Supplier / Buyer / Financier / Ops) |
+
+### DevNet manifests & bootstrap
+
+| File | What it is |
+|------|------------|
+| [parties.devnet.json](https://github.com/Marshal-AM/meridian/blob/main/infra/manifests/parties.devnet.json) | Eight allowlisted Seaport personas |
+| [cash.devnet.json](https://github.com/Marshal-AM/meridian/blob/main/infra/manifests/cash.devnet.json) | MUSD bootstrap balances |
+| [allocate-devnet-parties.ts](https://github.com/Marshal-AM/meridian/blob/main/scripts/allocate-devnet-parties.ts) | Party allocation script |
+| [fund-devnet-parties.ts](https://github.com/Marshal-AM/meridian/blob/main/scripts/fund-devnet-parties.ts) | CC tap via Wallet SDK |
+| [capture-full-flow-logs.ts](https://github.com/Marshal-AM/meridian/blob/main/scripts/capture-full-flow-logs.ts) | Full-flow DevNet run → `logs/` + explorer links |
+| [logs/TRANSACTIONS.md](https://github.com/Marshal-AM/meridian/blob/main/logs/TRANSACTIONS.md) | Latest run: all updateIds + Lighthouse URLs |
+
+### Privacy / workflow tests (Daml Script)
+
+| File | What it proves |
+|------|----------------|
+| [FinancingTest.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/tests/daml/Meridian/FinancingTest.daml) | Sealed-bid privacy + award atomicity |
+| [SyndicationTest.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/tests/daml/Meridian/SyndicationTest.daml) | Buyer/supplier cannot see syndication |
+| [ReceivableTest.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/tests/daml/Meridian/ReceivableTest.daml) | Interface-view privacy + SCU |
+| [MandateTest.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/tests/daml/Meridian/MandateTest.daml) | On-ledger agent mandate enforcement |
+| [CashTest.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/tests/daml/Meridian/CashTest.daml) | CIP-56 MUSD mint / transfer / allocate |
 
 ---
 
@@ -39,17 +131,52 @@ Meridian is a multi-party workflow. Each participant below is a **Party** on Can
 
 ---
 
+## Disclaimer: Why the demo uses fixed parties (not “bring your own wallet”)
+
+**For judges:** Meridian does **not** let an arbitrary Canton DevNet wallet connect and play Supplier, Buyer, or Financier. That is intentional — not a missing feature we overlooked.
+
+### What you will see in the demo
+
+- The portal is a **role chooser** (Supplier / Buyer / Financier / Platform Ops). Switching roles changes which UI you use.
+- Every ledger action runs as one of **eight pre-allocated DevNet parties** recorded in [`parties.devnet.json`](https://github.com/Marshal-AM/meridian/blob/main/infra/manifests/parties.devnet.json).
+- Commands are submitted with the shared Seaport **M2M** validator credentials (`actAs` those parties). There is **no end-user wallet connect** and no “sign with my own Canton account” path in the app.
+
+### Why this is the correct model on Seaport DevNet
+
+1. **Allowlisting is required by the network operators.** On 5North’s shared Seaport sandbox, each Party ID must be **manually allowlisted** by the Canton / validator team before it can submit real transactions. Open self-serve onboarding (“any wallet → any role”) is blocked at the infrastructure gate, not only in our UI. Supporting BYO wallets would mean a human allowlist ticket, rights grants, MUSD funding, and a dedicated indexer for every new user — without proving anything extra about sealed-bid privacy or atomic settlement.
+
+2. **Meridian is institutional multi-party finance, not permissionless DeFi.** Canton actors are durable **Parties** (supplier, buyer, financier desks), not anonymous addresses hopping between roles. The product target is KYB-gated counterparties joining a private financing workflow. Fixed, named personas are the right demo stand-in for “already onboarded institutions.”
+
+3. **Daml privacy is still real.** All eight personas share one physical validator for this hackathon track, but sealed-bid isolation is enforced by **signatory / observer rules on the ledger**. Financier A genuinely cannot read Financier B’s bid contracts. What we are *not* claiming yet is production-grade infrastructure separation (one validator trust root per organization) — that is deferred; privacy guarantees for Phases 1–4 do not depend on it.
+
+4. **Onboarding hooks exist; self-serve wallets do not.** Platform Ops can run a **KYB stub → party allocation** path. That proves the gate design. It does **not** wire a newly allocated party into the portals. Wiring every allocated party into the live demo would still hit allowlisting and would dilute the judge-facing story.
+
+### What this demo is meant to prove
+
+| We prove | We do not claim yet |
+|----------|---------------------|
+| Sealed-bid financing, award DvP, syndication, buyer-blind repayment | Anyone with a DevNet wallet can self-onboard |
+| Party-scoped privacy on a real DevNet ledger | Per-organization validator separation (later track) |
+| CIP-56 MUSD cash leg + oracle-anchored pricing | Production KYB / user-wallet signing |
+
+**Bottom line for judges:** Fixed demo parties + M2M submission is the honest design for a shared, allowlist-gated DevNet and for an institutional Canton product. Asking “why can’t I connect my wallet?” is answered by Canton’s party model and Seaport’s allowlisting — not by a gap in Meridian’s core workflow.
+
+---
+
 ## Table of Contents
 
-1. [Introduction](#introduction)
-2. [The Problem](#the-problem)
-3. [The Solution](#the-solution)
-4. [Architecture](#architecture)
-5. [On-Ledger Model](#on-ledger-model)
-6. [Daml Contracts](#daml-contracts)
-7. [Off-Ledger and Application Layer](#off-ledger-and-application-layer)
-8. [Roadmap](#roadmap)
-9. [Conclusion](#conclusion)
+1. [Important Files](#important-files-contracts-services-manifests)
+2. [Disclaimer: Why the demo uses fixed parties](#disclaimer-why-the-demo-uses-fixed-parties-not-bring-your-own-wallet)
+3. [Introduction](#introduction)
+4. [The Problem](#the-problem)
+5. [The Solution](#the-solution)
+6. [Architecture](#architecture)
+7. [How Canton Network Enables Meridian](#how-canton-network-enables-meridian)
+8. [On-Ledger Model](#on-ledger-model)
+9. [Daml Contracts](#daml-contracts)
+10. [Off-Ledger and Application Layer](#off-ledger-and-application-layer)
+11. [Roadmap](#roadmap)
+12. [Conclusion](#conclusion)
 
 ---
 
@@ -261,6 +388,8 @@ When buyers or registries sit on **private synchronizers**:
 
 ### Why Canton is load-bearing
 
+Meridian is not “a DApp that happens to use Canton.” Every privacy and settlement guarantee below depends on a Canton-native capability. The full feature → code map is in [How Canton Network Enables Meridian](#how-canton-network-enables-meridian).
+
 | Canton property | What it enables for Meridian |
 |-----------------|------------------------------|
 | Parties, not addresses | Institutional identities with hosted participant nodes |
@@ -268,6 +397,8 @@ When buyers or registries sit on **private synchronizers**:
 | Atomic multi-party commit | DvP, payee reassignment, waterfall without reconciliation jobs |
 | CIP-56 token standard | MUSD discoverable by compliant wallets; allocation-based DvP |
 | Network of networks | Cross-synchronizer reassignment and honest finality labels |
+| Interface views | Typed, party-scoped projections of one receivable |
+| Smart Contract Upgrade | Evolve templates without breaking counterparties |
 
 ### Settlement finality — what treasury should understand
 
@@ -557,63 +688,271 @@ This round-trip applies to every portal action — issue, bid, award, repay. Not
 
 ---
 
+## How Canton Network Enables Meridian
+
+Every Meridian guarantee maps to a **Canton-native** capability. Below: the feature, why Meridian needs it, and **exact code** where it is used. Links open on GitHub at the cited lines (`main` branch).
+
+### 1. Parties — durable institutional identities (not wallet addresses)
+
+Canton actors are `Party` values bound to a participant node. Meridian roles (Supplier, Buyer, Financier, …) are parties, not ephemeral addresses.
+
+| Where | Link |
+|-------|------|
+| On-ledger `OrgRole` enum | [PartyRegistry.daml L7–15](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-core/daml/Meridian/Topology/PartyRegistry.daml#L7-L15) |
+| `Receivable` supplier/buyer as `Party` | [Receivable.daml L21–22](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Receivable.daml#L21-L22) |
+| DevNet persona roster (8 parties) | [parties.devnet.json L7–70](https://github.com/Marshal-AM/meridian/blob/main/infra/manifests/parties.devnet.json#L7-L70) |
+| TypeScript `OrgRole` mirror | [shared-types L1–9](https://github.com/Marshal-AM/meridian/blob/main/packages/shared-types/src/index.ts#L1-L9) |
+| Allocation script personas | [allocate-devnet-parties.ts L14–28](https://github.com/Marshal-AM/meridian/blob/main/scripts/allocate-devnet-parties.ts#L14-L28) |
+
+### 2. Signatory / observer — sub-transaction privacy by construction
+
+Visibility is declared on the contract. The synchronizer delivers encrypted views only to stakeholders. Meridian’s sealed bids and private syndication rooms are this mechanism — not UI filtering.
+
+| Pattern | Signatory | Observer | Link |
+|---------|-----------|----------|------|
+| Sealed primary bid | financier | **supplier only** | [Bid.daml L27–28](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/Bid.daml#L27-L28) |
+| Financing round | supplier | invited financiers | [FinancingRequest.daml L34–35](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRequest.daml#L34-L35) |
+| Receivable | supplier + buyer | payee, platform, compliance | [Receivable.daml L40–41](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Receivable.daml#L40-L41) |
+| Syndication offering | lead | invited participants **only** (comment L15) | [SyndicationOffering.daml L15, L33–34](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/SyndicationOffering.daml#L15-L34) |
+| Sealed syndication bid | participant | **lead only** | [SyndicationBid.daml L24–25](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/SyndicationBid.daml#L24-L25) |
+| Settlement audit | supplier + financier | platform operator | [SettlementAuditRecord.daml L18–19](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Settlement/SettlementAuditRecord.daml#L18-L19) |
+
+**Proven in tests:** [FinancingTest.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/tests/daml/Meridian/FinancingTest.daml) (`testSealedBidPrivacy`), [SyndicationTest.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/tests/daml/Meridian/SyndicationTest.daml) (`testBuyerSupplierNoSyndicationVisibility`).
+
+### 3. Interface views — typed, party-scoped projections of one contract
+
+One `Receivable`, many typed views. A buyer fetching `IBuyerView` never receives discount economics.
+
+| Interface | Exposes | Definition |
+|-----------|---------|------------|
+| `IBuyerView` | payee, face value, due date | [Interfaces.daml L8–19](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Interfaces.daml#L8-L19) |
+| `ISupplierView` | full economics + bid history | [Interfaces.daml L21–38](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Interfaces.daml#L21-L38) |
+| `IFinancierView` | invitation-scoped headline | [Interfaces.daml L40–52](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Interfaces.daml#L40-L52) |
+| `ILeadFinancierView` | full syndication cap table | [Interfaces.daml L54–65](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Interfaces.daml#L54-L65) |
+| `IParticipantView` | own share only | [Interfaces.daml L67–76](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Interfaces.daml#L67-L76) |
+| `IRegulatorView` | jurisdiction + aggregate exposure | [Interfaces.daml L78–87](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Interfaces.daml#L78-L87) |
+
+**Implemented on `Receivable`:** [Receivable.daml L46–94](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Receivable.daml#L46-L94).  
+**Off-ledger projection:** [replay-indexer.ts L300–349](https://github.com/Marshal-AM/meridian/blob/main/services/indexer/src/replay-indexer.ts#L300-L349).  
+**Supplier masks `PartiallySyndicated` → looks “Funded”:** [Receivable/Types.daml L56–59](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Types.daml#L56-L59).
+
+### 4. Atomic multi-party commit — DvP without reconciliation windows
+
+A single Daml transaction can require multiple controllers, `fetch`/`exercise` across contracts, and create audit artifacts — all or nothing.
+
+| Flow | Controllers | Critical lines |
+|------|-------------|----------------|
+| Primary **AwardBid** (cash + funding + close bids + audit) | `supplier, settlementFinancier` | [FinancingRequest.daml L147–194](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRequest.daml#L147-L194) |
+| Nested CIP-56 allocation execute inside award | — | [FinancingRequest.daml L170–171](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRequest.daml#L170-L171) |
+| `ApplyFunding` payee reassignment | — | [Receivable.daml L122–135](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Receivable.daml#L122-L135) |
+| Syndication **AwardBid** | `leadFinancier, winningParticipant` | [SyndicationOffering.daml L121–171](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/SyndicationOffering.daml#L121-L171) |
+| **RepayWithProof** + waterfall | multi-party | [Receivable.daml L171–226](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Receivable.daml#L171-L226) |
+| Portal orchestrates allocation then award | — | [portal-api L834–925](https://github.com/Marshal-AM/meridian/blob/main/services/portal-api/src/index.ts#L834-L925) |
+| Command builder | — | [commands.ts L542–556](https://github.com/Marshal-AM/meridian/blob/main/packages/ledger-client/src/commands.ts#L542-L556) |
+
+### 5. CIP-56 token standard — Holding, TransferFactory, Allocation
+
+Meridian’s cash leg is **MUSD**, shaped to Canton’s Token Standard so DvP and wallet discovery use the same interfaces as the rest of the network.
+
+| CIP-56 piece | Meridian template | Link |
+|--------------|-------------------|------|
+| `Holding` | `MusdHolding` | [Holding.daml L8–19](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Holding.daml#L8-L19) |
+| `TransferFactory` | `MusdRules` | [Registry.daml L23–54](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Registry.daml#L23-L54) |
+| `AllocationFactory` | `MusdRules` | [Registry.daml L56–82](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Registry.daml#L56-L82) |
+| `Allocation` | `MusdAllocation` | [Allocation.daml L24–64](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Allocation.daml#L24-L64) |
+| `TransferInstruction` | `MusdTransferOffer` | [Transfer.daml L24–71](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Transfer.daml#L24-L71) |
+| Registry mint / factory bootstrap | `CashRegistry` | [Registry.daml L85–113](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Registry.daml#L85-L113) |
+| Interface ID constants (TS) | — | [cip56.ts L1–9](https://github.com/Marshal-AM/meridian/blob/main/packages/ledger-client/src/cip56.ts#L1-L9) |
+| Wallet discovery API | — | [registry-api L114–150](https://github.com/Marshal-AM/meridian/blob/main/services/registry-api/src/index.ts#L114-L150) |
+| Allocate advance helper | — | [commands.ts L643–677](https://github.com/Marshal-AM/meridian/blob/main/packages/ledger-client/src/commands.ts#L643-L677) |
+
+### 6. Network of networks — settlement finality classification
+
+Canton supports shared + private synchronizers. Meridian records **which guarantee actually applied** on every award — never silently claiming atomicity when topology cannot deliver it.
+
+| Class | Meaning | On-ledger enum |
+|-------|---------|----------------|
+| `Atomic` | One commit settles assignment + cash | [Settlement/Types.daml L4–8](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Settlement/Types.daml#L4-L8) |
+| `ReassignmentMediated` | Core trade atomic; buyer notice crosses domains | same |
+| `EscrowFallback` | Bounded escrow when no common cash domain | same |
+
+| Usage | Link |
+|-------|------|
+| `AwardBid` takes `settlementFinality` and writes audit | [FinancingRequest.daml L153, L181–189](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRequest.daml#L153-L189) |
+| Audit template | [SettlementAuditRecord.daml L7–19](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Settlement/SettlementAuditRecord.daml#L7-L19) |
+| TS mirror | [shared-types L432–438](https://github.com/Marshal-AM/meridian/blob/main/packages/shared-types/src/index.ts#L432-L438) |
+| Ops indexer rollup | [settlement-projector.ts L11–29](https://github.com/Marshal-AM/meridian/blob/main/services/indexer/src/settlement-projector.ts#L11-L29) |
+| Phase 5 cross-sync plan | [phaseDocs.md](https://github.com/Marshal-AM/meridian/blob/main/docs/phaseDocs.md) (Track B / Phase 5) |
+
+> DevNet demo runs on a **single** Seaport synchronizer ([parties.devnet.json L2](https://github.com/Marshal-AM/meridian/blob/main/infra/manifests/parties.devnet.json#L2)); finality labels are exercised as `Atomic` today and the enum is ready for multi-domain topology.
+
+### 7. On-ledger oracle validation — pricing anchored to verified feeds
+
+Bids reference a cryptographically checked RedStone payload. Stale or out-of-band prices fail at the **contract**, not in the UI.
+
+| Layer | Link |
+|-------|------|
+| `validateOracleAnchoredBid` / rate extract | [OracleValidation.daml L10–30](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/OracleValidation.daml#L10-L30) |
+| Called when creating a primary `Bid` | [Bid.daml L56–61](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/Bid.daml#L56-L61) |
+| Syndication bid validation | [SyndicationBid.daml L51–56](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/SyndicationBid.daml#L51-L56) |
+| Pricing mode / band types | [Financing/Types.daml L5–16](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/Types.daml#L5-L16) |
+| Off-ledger RedStone relay | [oracle-relay-service.ts L90–107, L152–161](https://github.com/Marshal-AM/meridian/blob/main/services/oracle-relay/src/oracle-relay-service.ts#L90-L161) |
+| Portal attaches payload to bid submit | [portal-api L1180–1197](https://github.com/Marshal-AM/meridian/blob/main/services/portal-api/src/index.ts#L1180-L1197) |
+
+### 8. On-ledger bidding mandates — agent authority bounded by the ledger
+
+Automated bidding is allowed only inside a contract the financier signed. The ledger rejects out-of-mandate agent bids.
+
+| Piece | Link |
+|-------|------|
+| `BiddingMandate` template | [BiddingMandate.daml L6–45](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/BiddingMandate.daml#L6-L45) |
+| `validateMandateConstraints` | [MandateValidation.daml L6–21](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/MandateValidation.daml#L6-L21) |
+| Wired in `SubmitBid` / `ReplaceBid` | [FinancingRequest.daml L58–66](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRequest.daml#L58-L66) |
+| Agent runtime respects mandate | [agent-loop.ts L41–42, L92–97](https://github.com/Marshal-AM/meridian/blob/main/services/agent-runtime/src/agent-loop.ts#L41-L97) |
+| Tests | [MandateTest.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/tests/daml/Meridian/MandateTest.daml) |
+
+### 9. Smart Contract Upgrade (SCU) — evolve without breaking counterparties
+
+Packages declare upgrade lineages so new fields/views can ship without forcing every counterparty to redeploy from scratch.
+
+| Piece | Link |
+|-------|------|
+| Core package `upgrades:` | [meridian-core/daml.yaml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-core/daml.yaml) |
+| `PartyRegistry` SCU note + `UpdateJurisdiction` | [PartyRegistry.daml L17–18, L44–49](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-core/daml/Meridian/Topology/PartyRegistry.daml#L17-L49) |
+| `MarkFunded` SCU alias on `Receivable` | [Receivable.daml L137–149](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Receivable.daml#L137-L149) |
+| v0.1.0 baseline package | [meridian-receivable-v010](https://github.com/Marshal-AM/meridian/tree/main/daml/packages/meridian-receivable-v010) |
+| Breaking-upgrade CI package | [meridian-core-breaking](https://github.com/Marshal-AM/meridian/tree/main/daml/packages/meridian-core-breaking) |
+
+### 10. Participant-scoped reads — off-ledger services inherit ledger privacy
+
+Indexers and portals never see more than their acting party’s stream. Even on a shared Seaport validator, privacy is Daml-enforced.
+
+| Piece | Link |
+|-------|------|
+| Per-org indexer configs | [services/indexer/config/](https://github.com/Marshal-AM/meridian/tree/main/services/indexer/config) |
+| Supplier indexer acting party | [supplier.yaml](https://github.com/Marshal-AM/meridian/blob/main/services/indexer/config/supplier.yaml) |
+| Portal role surfaces (demo) | [roles.ts L4–52](https://github.com/Marshal-AM/meridian/blob/main/apps/portal/src/lib/roles.ts#L4-L52) |
+| M2M DevNet auth (no user wallet) | [devnet-auth](https://github.com/Marshal-AM/meridian/tree/main/packages/devnet-auth) · [docs/devnet.md](https://github.com/Marshal-AM/meridian/blob/main/docs/devnet.md) |
+
+### Feature → product claim (summary)
+
+| Canton feature | Meridian product claim it unlocks |
+|----------------|-----------------------------------|
+| Party identity | Institutional counterparties, not anonymous wallets |
+| Signatory/observer | Sealed bids; private syndication; buyer-blind economics |
+| Interface views | One receivable, six lawful projections |
+| Atomic multi-party tx | Award DvP; syndicated repayment waterfall |
+| CIP-56 | Interoperable MUSD cash leg |
+| Finality enum + audit | Honest treasury risk labeling across topologies |
+| On-ledger oracle checks | Non-silent pricing integrity |
+| On-ledger mandates | Safe agentic bidding |
+| SCU | Institutional upgrade path |
+| Per-party ACS/streams | Rebuildable indexers with no cross-org leakage |
+
+---
+
 ## On-Ledger Model
 
-Domain objects on the ledger — what they mean, who authorizes them, and what each party learns.
+Domain objects on the ledger — what they mean, who authorizes them, what each party learns, and where the code lives.
 
 ### Receivable and proposal
 
-Tokenized invoice (line items, face value, due date, payee, lifecycle). Supplier proposes; buyer co-signs to issue. Lifecycle: issued → posted → funded → repaid / overdue / defaulted. Buyer sees payee and amount only; supplier sees full economics; financiers see invitation-scoped fields.
+Tokenized invoice (line items, face value, due date, payee, lifecycle). Supplier proposes; buyer co-signs to issue.
+
+| Concept | Code |
+|---------|------|
+| Lifecycle states (`Issued` → `PartiallySyndicated` → …) | [Receivable/Types.daml L14–22](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Types.daml#L14-L22) |
+| `Receivable` template + signatories | [Receivable.daml L18–41](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Receivable.daml#L18-L41) |
+| `ReceivableProposal` + `CoSignAndIssue` | [ReceivableProposal.daml L9–54](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/ReceivableProposal.daml#L9-L54) |
+
+Buyer sees payee/amount only via [`IBuyerView`](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Interfaces.daml#L8-L19); supplier sees full economics via [`ISupplierView`](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Interfaces.daml#L21-L38).
 
 ### Assignment consent policy
 
 Standing buyer permission to assign at award without being online — required for atomic payee change when cash moves.
 
+- Template: [AssignmentConsentPolicy.daml L13–26](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/AssignmentConsentPolicy.daml#L13-L26) (buyer signatory; supplier observer).
+
 ### Financing request and bid
 
-Private auction room per receivable: invitees, pricing band, deadline, oracle reference. One sealed bid per financier, oracle-fresh, within band. Agent bids must satisfy an active mandate. Only financier + supplier observe each bid.
+Private auction room per receivable: invitees, pricing band, deadline, oracle reference. One sealed bid per financier.
+
+| Concept | Code |
+|---------|------|
+| Open round | [FinancingRoundFactory.daml L11–45](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRoundFactory.daml#L11-L45) |
+| Round + invited observers | [FinancingRequest.daml L20–35](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRequest.daml#L20-L35) |
+| `SubmitBid` (oracle + mandate gates) | [FinancingRequest.daml L41–83](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRequest.daml#L41-L83) |
+| Sealed `Bid` (supplier-only observer) | [Bid.daml L8–28](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/Bid.daml#L8-L28) |
 
 ### Award and settlement
 
-Single transaction: validate round and bid → MUSD transfer → payee reassignment → close all bids → write settlement audit record. No gap between assignment and cash.
+Single transaction: validate round and bid → execute MUSD allocation → payee reassignment → close all bids → write settlement audit.
+
+- Atomic path: [FinancingRequest.daml L147–194](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRequest.daml#L147-L194)
+- Portal orchestration: [portal-api L834–925](https://github.com/Marshal-AM/meridian/blob/main/services/portal-api/src/index.ts#L834-L925)
 
 ### MUSD and the cash leg
 
-Tokenized cash (CIP-56) for advances and repayments. Registry mints MUSD and publishes allocation factories so DvP runs on the same ledger as the receivable.
+Tokenized cash (CIP-56) for advances and repayments. Registry mints MUSD and publishes allocation factories.
+
+- Factories: [Registry.daml L17–82](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Registry.daml#L17-L82)
+- Bootstrap balances: [cash.devnet.json](https://github.com/Marshal-AM/meridian/blob/main/infra/manifests/cash.devnet.json)
 
 ### Repayment and proof-of-payoff
 
-Buyer pays payee-of-record; syndicated deals waterfall in one commit. **Repayment proof** (payer, payee, amount, timestamp) goes to the supplier — no financing fields exposed to the buyer.
+Buyer pays payee-of-record; syndicated deals waterfall in one commit.
+
+- `RepayWithProof`: [Receivable.daml L171–226](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Receivable.daml#L171-L226)
+- Waterfall math: [Waterfall.daml L12–22](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/Waterfall.daml#L12-L22)
+- Proof template: [RepaymentProof.daml L6–18](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/RepaymentProof.daml#L6-L18)
 
 ### Syndication offering and participation interest
 
-Sealed-bid room to sell pass-through slices of a funded position. Payee stays with lead; cap table on lead view; participants see own slice only. Waterfall enforces pro-rata splits at repayment.
+Sealed-bid room to sell pass-through slices. Payee stays with lead; buyer/supplier never observe the offering.
+
+| Concept | Code |
+|---------|------|
+| Privacy comment + observers | [SyndicationOffering.daml L15, L33–34](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/SyndicationOffering.daml#L15-L34) |
+| Award → `ParticipationInterest` | [SyndicationOffering.daml L121–171](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/SyndicationOffering.daml#L121-L171) |
+| Pass-through interest | [ParticipationInterest.daml L7–33](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/ParticipationInterest.daml#L7-L33) |
+| Sealed syndication bid | [SyndicationBid.daml L8–25](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/SyndicationBid.daml#L8-L25) |
 
 ### Settlement audit record
 
-Immutable finality label: atomic, reassignment-mediated, or escrow-fallback — shown on all persona and ops surfaces.
+Immutable finality label: `Atomic` / `ReassignmentMediated` / `EscrowFallback`.
+
+- Enum: [Settlement/Types.daml L4–8](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Settlement/Types.daml#L4-L8)
+- Record: [SettlementAuditRecord.daml L7–19](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Settlement/SettlementAuditRecord.daml#L7-L19)
 
 ### Bidding mandate and agent
 
-On-ledger limits: max exposure, min spread, eligible suppliers, agent-enabled flag. Every agent bid must satisfy the mandate or the ledger rejects it.
+On-ledger limits: max exposure, min spread, eligible suppliers, agent-enabled flag.
+
+- Mandate: [BiddingMandate.daml L6–45](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/BiddingMandate.daml#L6-L45)
+- Validation: [MandateValidation.daml L6–21](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/MandateValidation.daml#L6-L21)
+- Agent loop: [agent-loop.ts](https://github.com/Marshal-AM/meridian/blob/main/services/agent-runtime/src/agent-loop.ts)
 
 ### Regulator and compliance views
 
 Jurisdiction-scoped observer grants for aggregate exposure — never per-trade commercial detail.
 
-### Validation pipelines
+- Grant: [RegulatorJurisdictionGrant.daml L4–17](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Compliance/RegulatorJurisdictionGrant.daml#L4-L17)
+- View: [Interfaces.daml L78–87](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Interfaces.daml#L78-L87)
 
-**Bid:** invited → round open → no duplicate bid → oracle fresh → in band → mandate OK (if agent) → create bid.
+### Validation pipelines (with code anchors)
 
-**Award:** round open → bid valid → MUSD matches → transfer → fund receivable → close bids → audit record → round awarded.
+**Bid:** invited → round open → no duplicate → oracle fresh ([OracleValidation.daml L10–30](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/OracleValidation.daml#L10-L30)) → in band → mandate OK if agent ([MandateValidation.daml L6–21](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/MandateValidation.daml#L6-L21)) → create bid ([Bid.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/Bid.daml)).
 
-**Repayment:** funded/overdue → face value → buyer sender → waterfall if syndicated → repayment proof → repaid.
+**Award:** round open → bid valid → MUSD matches → `Allocation_ExecuteTransfer` ([FinancingRequest.daml L170–171](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRequest.daml#L170-L171)) → `ApplyFunding` ([Receivable.daml L122–135](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Receivable.daml#L122-L135)) → close bids → audit ([FinancingRequest.daml L181–189](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRequest.daml#L181-L189)).
 
-**Syndication award:** offering open → bid valid → lead is payee → share within cap → participation interest created.
+**Repayment:** funded/overdue → face value → waterfall if syndicated ([Waterfall.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/Waterfall.daml)) → [RepaymentProof](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/RepaymentProof.daml).
+
+**Syndication award:** offering open → bid valid → lead is payee → share within cap → [ParticipationInterest](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/ParticipationInterest.daml) ([SyndicationOffering.daml L121–171](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/SyndicationOffering.daml#L121-L171)).
 
 ### Artifacts users rely on
 
-**Settlement audit record** — how final was settlement? **Repayment proof** — was the invoice paid, by whom, when?
+**Settlement audit record** — how final was settlement? ([SettlementAuditRecord.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Settlement/SettlementAuditRecord.daml))  
+**Repayment proof** — was the invoice paid, by whom, when? ([RepaymentProof.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/RepaymentProof.daml))
 
 ---
 
@@ -621,129 +960,141 @@ Jurisdiction-scoped observer grants for aggregate exposure — never per-trade c
 
 All business rules live in Daml across three packages: **`meridian-receivable`** (invoices, financing, syndication, settlement), **`meridian-cash`** (MUSD under CIP-56), and **`meridian-core`** (party onboarding anchor). Portals and services submit **choices** on these templates — they do not reimplement the logic off-ledger.
 
+Package roots:
+
+- [daml/packages/meridian-receivable](https://github.com/Marshal-AM/meridian/tree/main/daml/packages/meridian-receivable)
+- [daml/packages/meridian-cash](https://github.com/Marshal-AM/meridian/tree/main/daml/packages/meridian-cash)
+- [daml/packages/meridian-core](https://github.com/Marshal-AM/meridian/tree/main/daml/packages/meridian-core)
+
 ### Contract inventory
 
-| Package | Template / interface | Product role |
-|---------|---------------------|--------------|
-| `meridian-receivable` | `ReceivableProposal` | Draft invoice awaiting buyer co-sign |
-| | `Receivable` | Tokenized invoice — lifecycle, payee, cap table |
-| | `AssignmentConsentPolicy` | Standing buyer consent to assign at award |
-| | `FinancingRoundFactory` | Supplier opens a financing round |
-| | `FinancingRequest` | Sealed-bid auction room |
-| | `Bid` | One financier's sealed primary-market bid |
-| | `BiddingMandate` | On-ledger risk limits for agent bidding |
-| | `SyndicationFactory` | Lead opens a syndication round |
-| | `SyndicationOffering` | Sealed-bid syndication room |
-| | `SyndicationBid` | One participant's sealed syndication bid |
-| | `ParticipationInterest` | Pass-through slice of repayment proceeds |
-| | `RepaymentProof` | Supplier-facing proof of buyer payoff |
-| | `SettlementAuditRecord` | Immutable settlement finality label |
-| | `RegulatorJurisdictionGrant` | Maps regulator to jurisdiction |
-| | `IBuyerView` … `IRegulatorView` | Typed privacy projections on receivables |
-| `meridian-cash` | `CashRegistry` | MUSD mint and factory bootstrap |
-| | `MusdRules` | CIP-56 transfer and allocation factories |
-| | `MusdHolding` | Fungible MUSD balance |
-| | `MusdAllocation` | Locked DvP leg at award / repayment |
-| | `MusdTransferOffer` | Free transfer pending receiver accept |
-| | `MergeHoldingsStub` | Placeholder for holding-merge tooling |
-| `meridian-core` | `PartyRegistry` | KYB-gated party allocation record |
+| Package | Template / interface | Product role | Source |
+|---------|---------------------|--------------|--------|
+| `meridian-receivable` | `ReceivableProposal` | Draft invoice awaiting buyer co-sign | [ReceivableProposal.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/ReceivableProposal.daml) |
+| | `Receivable` | Tokenized invoice — lifecycle, payee, cap table | [Receivable.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Receivable.daml) |
+| | `AssignmentConsentPolicy` | Standing buyer consent to assign at award | [AssignmentConsentPolicy.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/AssignmentConsentPolicy.daml) |
+| | `FinancingRoundFactory` | Supplier opens a financing round | [FinancingRoundFactory.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRoundFactory.daml) |
+| | `FinancingRequest` | Sealed-bid auction room | [FinancingRequest.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRequest.daml) |
+| | `Bid` | One financier's sealed primary-market bid | [Bid.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/Bid.daml) |
+| | `BiddingMandate` | On-ledger risk limits for agent bidding | [BiddingMandate.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/BiddingMandate.daml) |
+| | `SyndicationFactory` | Lead opens a syndication round | [SyndicationFactory.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/SyndicationFactory.daml) |
+| | `SyndicationOffering` | Sealed-bid syndication room | [SyndicationOffering.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/SyndicationOffering.daml) |
+| | `SyndicationBid` | One participant's sealed syndication bid | [SyndicationBid.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/SyndicationBid.daml) |
+| | `ParticipationInterest` | Pass-through slice of repayment proceeds | [ParticipationInterest.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/ParticipationInterest.daml) |
+| | `RepaymentProof` | Supplier-facing proof of buyer payoff | [RepaymentProof.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/RepaymentProof.daml) |
+| | `SettlementAuditRecord` | Immutable settlement finality label | [SettlementAuditRecord.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Settlement/SettlementAuditRecord.daml) |
+| | `RegulatorJurisdictionGrant` | Maps regulator to jurisdiction | [RegulatorJurisdictionGrant.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Compliance/RegulatorJurisdictionGrant.daml) |
+| | `IBuyerView` … `IRegulatorView` | Typed privacy projections | [Interfaces.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Interfaces.daml) |
+| `meridian-cash` | `CashRegistry` | MUSD mint and factory bootstrap | [Registry.daml L85–113](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Registry.daml#L85-L113) |
+| | `MusdRules` | CIP-56 transfer and allocation factories | [Registry.daml L17–82](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Registry.daml#L17-L82) |
+| | `MusdHolding` | Fungible MUSD balance | [Holding.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Holding.daml) |
+| | `MusdAllocation` | Locked DvP leg at award / repayment | [Allocation.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Allocation.daml) |
+| | `MusdTransferOffer` | Free transfer pending receiver accept | [Transfer.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Transfer.daml) |
+| | `MergeHoldingsStub` | Placeholder for holding-merge tooling | [Merge.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Merge.daml) |
+| `meridian-core` | `PartyRegistry` | KYB-gated party allocation record | [PartyRegistry.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-core/daml/Meridian/Topology/PartyRegistry.daml) |
 
 ### Receivable domain
 
-**ReceivableProposal** — Draft invoice created by the supplier. **Signatory:** supplier. **Observer:** buyer. **Key choices:** `CoSignAndIssue` (buyer issues live receivable after consent check), `Withdraw` (supplier cancels). Resolves assignment consent inline or via a linked policy before creating `Receivable`.
+**ReceivableProposal** — Draft invoice created by the supplier. **Signatory:** supplier. **Observer:** buyer ([L20–21](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/ReceivableProposal.daml#L20-L21)). **Key choice:** `CoSignAndIssue` ([L25–54](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/ReceivableProposal.daml#L25-L54)) — buyer issues live receivable after consent check.
 
-**Receivable** — The tokenized invoice: line items, face value, due date, lifecycle state, payee-of-record, invited financiers, syndication cap table, bid history. **Signatories:** supplier and buyer. **Observers:** current payee, platform operator, compliance observers. Implements six interface views (see below). **Key choices:** `PostForBid`, `ApplyFunding` (payee change at award), `RepayWithProof` (buyer payment + optional waterfall), `MarkOverdue`, `MarkDefaulted`, `ApplySyndication`.
+**Receivable** — Tokenized invoice: line items, face value, due date, lifecycle, payee-of-record, cap table, bid history. **Signatories:** supplier and buyer ([L40](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Receivable.daml#L40)). **Observers:** payee, platform operator, compliance observers ([L41](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Receivable.daml#L41)). Implements six interface views ([L46–94](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Receivable.daml#L46-L94)). **Key choices:** `PostForBid`; `ApplyFunding` ([L122–135](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Receivable.daml#L122-L135)); `ApplySyndication` ([L151–163](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Receivable.daml#L151-L163)); `RepayWithProof` ([L171–226](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Receivable.daml#L171-L226)); `MarkOverdue` / `MarkDefaulted`.
 
-**AssignmentConsentPolicy** — Master-agreement standing permission for the supplier to assign without the buyer online at award. **Signatory:** buyer. **Observer:** supplier. **Key choices:** `Revoke`. Referenced from receivable `consentSource` at issuance.
+**AssignmentConsentPolicy** — Master-agreement standing permission. **Signatory:** buyer. **Observer:** supplier ([L21–22](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/AssignmentConsentPolicy.daml#L21-L22)). **Choice:** `Revoke` ([L24–26](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/AssignmentConsentPolicy.daml#L24-L26)).
 
 ### Financing domain
 
-**FinancingRoundFactory** — Per-supplier helper to open rounds against posted receivables. **Signatory:** supplier. **Key choice:** `OpenRound` — validates receivable is `PostedForBid`, sets invited financiers, creates `FinancingRequest`.
+**FinancingRoundFactory** — Per-supplier helper. **Signatory:** supplier ([L15](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRoundFactory.daml#L15)). **Choice:** `OpenRound` ([L17–45](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRoundFactory.daml#L17-L45)).
 
-**FinancingRequest** — Private auction room: invitees, pricing band, deadline, oracle feed ID, round state, active bid map. **Signatory:** supplier. **Observers:** invited financiers only. **Key choices:** `SubmitBid`, `ReplaceBid`, `AwardBid` (atomic DvP + funding + audit record), `PauseRound`, `EnterStaticReferenceFallback`, `ExpireRound`.
+**FinancingRequest** — Private auction room. **Signatory:** supplier. **Observers:** invited financiers only ([L34–35](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRequest.daml#L34-L35)). **Choices:** `SubmitBid` ([L41–83](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRequest.daml#L41-L83)); `AwardBid` atomic DvP ([L147–194](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRequest.daml#L147-L194)) — controllers `supplier, settlementFinancier` ([L154](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRequest.daml#L154)); `PauseRound` / `EnterStaticReferenceFallback` / `ExpireRound`.
 
-**Bid** — One financier's sealed offer: advance, discount rate, oracle anchor, optional agent/mandate reference. **Signatory:** financier. **Observer:** supplier only — other financiers never see this contract. **Key choices:** `Withdraw`, `SupplierClose` (on award or round end).
+**Bid** — One financier's sealed offer. **Signatory:** financier. **Observer:** supplier only ([L27–28](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/Bid.daml#L27-L28)) — other financiers never see this contract. Oracle fields on the template ([L16–22](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/Bid.daml#L16-L22)). **Choices:** `Withdraw`, `SupplierClose` ([L32–38](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/Bid.daml#L32-L38)).
 
-**BiddingMandate** — Risk envelope for automated bidding: max exposure, min spread, eligible suppliers, agent-enabled flag. **Signatory:** financier. **Key choices:** `Revoke`, `UpdateConstraints`, `SetAgentEnabled`. Referenced when `FinancingRequest.SubmitBid` is called with `viaAgent = true`; `MandateValidation` rejects out-of-policy bids at the ledger.
+**BiddingMandate** — Risk envelope for automated bidding. **Signatory:** financier ([L16](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/BiddingMandate.daml#L16)). **Choices:** `Revoke`, `UpdateConstraints`, `SetAgentEnabled` ([L22–45](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/BiddingMandate.daml#L22-L45)). Enforced via [MandateValidation.daml L6–21](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/MandateValidation.daml#L6-L21) when `viaAgent = true`.
 
 ### Syndication domain
 
-**SyndicationFactory** — Per-lead helper to open syndication against funded positions. **Signatory:** lead financier. **Key choice:** `OpenOffering` — requires lead is payee-of-record and receivable is `Funded` or `PartiallySyndicated`.
+**SyndicationFactory** — Per-lead helper. **Signatory:** lead financier. **Choice:** `OpenOffering` — [SyndicationFactory.daml L11–49](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/SyndicationFactory.daml#L11-L49).
 
-**SyndicationOffering** — Secondary sealed-bid room: invited participants, pricing band, deadline, active syndication bid map. **Signatory:** lead. **Observers:** invited participants only — buyer and supplier are never observers. **Key choices:** `SubmitBid`, `ReplaceBid`, `AwardBid` (creates `ParticipationInterest`, updates receivable cap table).
+**SyndicationOffering** — Secondary sealed-bid room. Explicit privacy rule at [L15](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/SyndicationOffering.daml#L15): buyer and supplier are never observers. **Signatory:** lead ([L33](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/SyndicationOffering.daml#L33)). **Observers:** invited participants ([L34](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/SyndicationOffering.daml#L34)). **AwardBid:** [L121–171](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/SyndicationOffering.daml#L121-L171).
 
-**SyndicationBid** — One participant's sealed slice offer: share basis points, discount/yield, oracle anchor. **Signatory:** participant. **Observer:** lead only. **Key choices:** `Withdraw`, `LeadClose`.
+**SyndicationBid** — Participant sealed offer. **Signatory:** participant. **Observer:** lead only ([L24–25](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/SyndicationBid.daml#L24-L25)).
 
-**ParticipationInterest** — Pass-through economic right to a pro-rata share of repayment (`legalNature = pass-through-proceeds`). **Signatories:** lead and participant. Does **not** change payee-of-record. Implements `IParticipantView` so participants see only their slice.
+**ParticipationInterest** — Pass-through economic right (`legalNature` metadata). **Signatories:** lead + participant ([L19–20](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/ParticipationInterest.daml#L19-L20)). Implements `IParticipantView` ([L28–33](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Syndication/ParticipationInterest.daml#L28-L33)). Does **not** change payee-of-record.
 
 ### Settlement, repayment, and compliance
 
-**RepaymentProof** — Immutable payoff artifact after buyer repayment. **Signatories:** payer and payee. **Observer:** supplier. Fields: amount, currency, timestamp, settlement reference — no financing economics.
+**RepaymentProof** — Immutable payoff artifact. **Signatories:** payer and payee. **Observer:** supplier ([L17–18](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/RepaymentProof.daml#L17-L18)). No financing economics on the template ([L6–18](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/RepaymentProof.daml#L6-L18)).
 
-**SettlementAuditRecord** — Written at award. **Signatories:** supplier and winning financier. **Observer:** platform operator. Records `SettlementFinality` (`Atomic`, `ReassignmentMediated`, `EscrowFallback`) without commercial pricing — ops monitors finality, not bid terms.
+**SettlementAuditRecord** — Written at award ([created from AwardBid L181–189](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRequest.daml#L181-L189)). Records `SettlementFinality` ([Types L4–8](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Settlement/Types.daml#L4-L8)) without commercial pricing. Template: [SettlementAuditRecord.daml L7–19](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Settlement/SettlementAuditRecord.daml#L7-L19).
 
-**RegulatorJurisdictionGrant** — Links a regulator party to a jurisdiction. **Signatory:** platform operator. **Observer:** regulator. **Key choice:** `Revoke`. Used with receivable `complianceObservers` for aggregate exposure views.
+**RegulatorJurisdictionGrant** — [L4–17](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Compliance/RegulatorJurisdictionGrant.daml#L4-L17). **Signatory:** platform operator. **Observer:** regulator.
 
 ### MUSD and CIP-56 cash (`meridian-cash`)
 
-**CashRegistry** — Registry bootstrap. **Signatory:** admin (registry party). **Key choices:** `MintHolding`, `CreateTransferFactory`, `CreateAllocationFactory` (both deploy `MusdRules`).
+**CashRegistry** — Bootstrap. **Signatory:** admin ([L89](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Registry.daml#L89)). **Choices:** `MintHolding`, `CreateTransferFactory`, `CreateAllocationFactory` ([L91–113](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Registry.daml#L91-L113)).
 
-**MusdRules** — Implements CIP-56 **TransferFactory** and **AllocationFactory** for MUSD. Consumes input holdings, creates transfer offers or locked allocations used in award and repayment DvP legs.
+**MusdRules** — Implements CIP-56 **TransferFactory** ([L23–54](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Registry.daml#L23-L54)) and **AllocationFactory** ([L56–82](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Registry.daml#L56-L82)).
 
-**MusdHolding** — Standard fungible MUSD balance. **Signatory:** registry admin. **Observer:** owner. Implements CIP-56 `Holding`.
+**MusdHolding** — Implements CIP-56 `Holding` ([Holding.daml L8–19](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Holding.daml#L8-L19)).
 
-**MusdAllocation** — Locked cash leg for atomic settlement. **Signatories:** sender and registry admin. **Observer:** settlement executor. Implements CIP-56 `Allocation` — `executeTransfer` releases MUSD to receiver when the receivable choice settles.
+**MusdAllocation** — Locked cash leg; `Allocation_ExecuteTransfer` ([Allocation.daml L55–64](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Allocation.daml#L55-L64)) releases MUSD when award/repay settles.
 
-**MusdTransferOffer** — Free-of-payment transfer pending receiver acceptance. Used for wallet-style MUSD moves outside DvP award/repay flows.
-
-**MergeHoldingsStub** — Placeholder for future holding-consolidation tooling (roadmap: merge at scale).
+**MusdTransferOffer** — Free-of-payment transfer pending accept ([Transfer.daml L24–71](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-cash/daml/Meridian/Cash/Transfer.daml#L24-L71)).
 
 ### Topology (`meridian-core`)
 
-**PartyRegistry** — On-ledger anchor that a party was KYB-verified and allocated with an organizational role (`Supplier`, `Buyer`, `Financier`, `Registry`, etc.). **Signatory:** platform operator. **Key choices:** `RegisterParty`, `UpdateJurisdiction`. Does not hold financing state — audit trail for onboarding.
+**PartyRegistry** — On-ledger KYB + role anchor. **`OrgRole`:** [L7–15](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-core/daml/Meridian/Topology/PartyRegistry.daml#L7-L15). **Template:** [L19–49](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-core/daml/Meridian/Topology/PartyRegistry.daml#L19-L49). **Signatory:** platform operator ([L28](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-core/daml/Meridian/Topology/PartyRegistry.daml#L28)). **Choices:** `RegisterParty`, `UpdateJurisdiction`.
 
 ### Interface views (privacy projections)
 
-These are not standalone business contracts; they define what each party **may query** from a `Receivable` or `ParticipationInterest`:
+| Interface | Implemented on | Exposes | Lines |
+|-----------|----------------|---------|-------|
+| `IBuyerView` | `Receivable` | Payee, face value, due date | [L8–19](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Interfaces.daml#L8-L19) |
+| `ISupplierView` | `Receivable` | Full economics, bid history, lifecycle | [L21–38](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Interfaces.daml#L21-L38) |
+| `IFinancierView` | `Receivable` | Invitation status, headline terms if invited | [L40–52](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Interfaces.daml#L40-L52) |
+| `ILeadFinancierView` | `Receivable` | Full syndication cap table | [L54–65](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Interfaces.daml#L54-L65) |
+| `IParticipantView` | `ParticipationInterest` | Own share basis points | [L67–76](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Interfaces.daml#L67-L76) |
+| `IRegulatorView` | `Receivable` | Jurisdiction, aggregate exposure | [L78–87](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Interfaces.daml#L78-L87) |
 
-| Interface | Implemented on | Exposes |
-|-----------|----------------|---------|
-| `IBuyerView` | `Receivable` | Payee, face value, due date |
-| `ISupplierView` | `Receivable` | Full economics, bid history, lifecycle |
-| `IFinancierView` | `Receivable` | Invitation status, headline terms if invited |
-| `ILeadFinancierView` | `Receivable` | Full syndication cap table |
-| `IParticipantView` | `ParticipationInterest` | Own share basis points |
-| `IRegulatorView` | `Receivable` | Jurisdiction, aggregate exposure |
-
-A party calling `fetchView @IBuyerView` on a receivable receives only buyer-scoped fields — the mechanism behind buyer privacy in the product.
+A party calling `fetchView @IBuyerView` receives only buyer-scoped fields — the ledger mechanism behind buyer privacy ([Receivable instances L46–94](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Receivable/Receivable.daml#L46-L94)).
 
 ---
 
 ## Off-Ledger and Application Layer
 
-Portals act; off-ledger services coordinate and project — they do not override the ledger.
+Portals act; off-ledger services coordinate and project — they do not override the ledger. Key entrypoints:
+
+| Surface / service | Source |
+|-------------------|--------|
+| Role chooser (demo personas) | [roles.ts](https://github.com/Marshal-AM/meridian/blob/main/apps/portal/src/lib/roles.ts) |
+| Command orchestration (BFF) | [portal-api/src/index.ts](https://github.com/Marshal-AM/meridian/blob/main/services/portal-api/src/index.ts) |
+| Per-party indexers | [services/indexer](https://github.com/Marshal-AM/meridian/tree/main/services/indexer) |
+| Oracle relay | [oracle-relay-service.ts](https://github.com/Marshal-AM/meridian/blob/main/services/oracle-relay/src/oracle-relay-service.ts) |
+| Registry / CIP-56 discovery | [registry-api](https://github.com/Marshal-AM/meridian/blob/main/services/registry-api/src/index.ts) |
+| AI agent runtime | [agent-loop.ts](https://github.com/Marshal-AM/meridian/blob/main/services/agent-runtime/src/agent-loop.ts) |
+| Shared projection types | [shared-types](https://github.com/Marshal-AM/meridian/blob/main/packages/shared-types/src/index.ts) |
 
 ### Supplier portal
 
-Issue invoices, open rounds, compare sealed bids, award, track portfolio and repayment proofs.
+Issue invoices, open rounds, compare sealed bids, award, track portfolio and repayment proofs — [SupplierPage.tsx](https://github.com/Marshal-AM/meridian/blob/main/apps/portal/src/pages/SupplierPage.tsx), [SupplierFinancingPage.tsx](https://github.com/Marshal-AM/meridian/blob/main/apps/portal/src/pages/SupplierFinancingPage.tsx).
 
 ### Buyer portal
 
-Co-sign, view obligations, repay — built on the buyer interface view (no financing leakage).
+Co-sign, view obligations, repay — built on the buyer interface view (no financing leakage) — [BuyerPage.tsx](https://github.com/Marshal-AM/meridian/blob/main/apps/portal/src/pages/BuyerPage.tsx).
 
 ### Financier desk
 
-Deal inbox, manual or agent bids, mandate configuration, positions, syndication as lead or participant.
+Deal inbox, manual or agent bids, mandate configuration, positions, syndication as lead or participant — [FinancierPage.tsx](https://github.com/Marshal-AM/meridian/blob/main/apps/portal/src/pages/FinancierPage.tsx), [FinancierSyndicationPage.tsx](https://github.com/Marshal-AM/meridian/blob/main/apps/portal/src/pages/FinancierSyndicationPage.tsx).
 
 ### Ops and compliance console
 
-Settlement finality, oracle health, regulator grants, KYB status. Operator **cannot** see individual bid terms or syndication entry prices.
+Settlement finality, oracle health, regulator grants, KYB status. Operator **cannot** see individual bid terms or syndication entry prices — [OpsPage.tsx](https://github.com/Marshal-AM/meridian/blob/main/apps/portal/src/pages/OpsPage.tsx).
 
 ### AI bidding agent
 
 Financiers can enable an **automated bidding agent** that watches the deal inbox and submits sealed bids on their behalf. The agent uses an LLM (Groq on DevNet) to evaluate each invitation — face value, pricing band, SOFR reference, mandate limits — and returns a structured bid proposal (advance amount, discount rate, rationale).
 
-**The agent has no independent authority.** Risk limits live in an on-ledger **bidding mandate** (max exposure, minimum spread, eligible suppliers). Before any agent bid is accepted, the ledger validates mandate constraints. A buggy, compromised, or adversarial agent cannot exceed those limits — rejection is a failed ledger transaction, not a polite refusal in agent code.
+**The agent has no independent authority.** Risk limits live in an on-ledger **bidding mandate** ([BiddingMandate.daml](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/BiddingMandate.daml)). Before any agent bid is accepted, the ledger validates mandate constraints ([MandateValidation.daml L6–21](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/MandateValidation.daml#L6-L21); wired in [FinancingRequest.daml L58–66](https://github.com/Marshal-AM/meridian/blob/main/daml/packages/meridian-receivable/daml/Meridian/Financing/FinancingRequest.daml#L58-L66)). A buggy, compromised, or adversarial agent cannot exceed those limits — rejection is a failed ledger transaction, not a polite refusal in agent code ([agent-loop.ts](https://github.com/Marshal-AM/meridian/blob/main/services/agent-runtime/src/agent-loop.ts)).
 
 ```mermaid
 sequenceDiagram
@@ -860,6 +1211,6 @@ Meridian is a Canton-native exchange for **private invoice financing and syndica
 | Settlement finality class | Participant entry prices |
 | Aggregate regulator exposure | Per-trade commercial detail |
 
-**Contributions:** interface-view privacy · sealed primary/secondary markets · atomic CIP-56 DvP · on-ledger mandate enforcement · honest settlement audit.
+**Contributions:** interface-view privacy · sealed primary/secondary markets · atomic CIP-56 DvP · on-ledger mandate enforcement · honest settlement audit — each mapped to Canton primitives and concrete line references in [How Canton Network Enables Meridian](#how-canton-network-enables-meridian).
 
-Invoice financing needs **privacy and interoperability together**. Canton provides institutional parties, sub-transaction privacy, atomic multi-party commit, CIP-56 cash, and cross-domain reassignment — the combination public chains and private databases each fail to deliver alone.
+Invoice financing needs **privacy and interoperability together**. Canton provides institutional parties, sub-transaction privacy, atomic multi-party commit, CIP-56 cash, and cross-domain reassignment — the combination public chains and private databases each fail to deliver alone. See also [Important Files](#important-files-contracts-services-manifests) for the contract and service index.

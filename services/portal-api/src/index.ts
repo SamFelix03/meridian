@@ -73,6 +73,15 @@ const AGENT_RUNTIME = process.env.AGENT_RUNTIME_URL ?? "http://127.0.0.1:4025";
 const REGULATOR_INDEXER = process.env.REGULATOR_INDEXER_URL ?? "http://127.0.0.1:4015";
 const PLATFORM_INDEXER = process.env.PLATFORM_INDEXER_URL ?? "http://127.0.0.1:4016";
 const KYB_GATEWAY = process.env.KYB_GATEWAY_URL ?? "http://127.0.0.1:8090";
+
+const INDEXER_HEALTH_TARGETS = [
+  { name: "supplier", url: `${SUPPLIER_INDEXER}/health` },
+  { name: "buyer", url: `${process.env.BUYER_INDEXER_URL ?? "http://127.0.0.1:4012"}/health` },
+  { name: "financier-a", url: `${FINANCIER_INDEXER}/health` },
+  { name: "financier-b", url: `${FINANCIER_INDEXER_B}/health` },
+  { name: "regulator", url: `${REGULATOR_INDEXER}/health` },
+  { name: "platform", url: `${PLATFORM_INDEXER}/health` },
+] as const;
 const PARTY_PROVISIONER = process.env.PARTY_PROVISIONER_URL ?? "http://127.0.0.1:8091";
 const KYB_COMPLETE_SECRET = process.env.KYB_COMPLETE_SECRET ?? "dev-kyb-secret";
 
@@ -293,6 +302,31 @@ async function handleRequest(
   try {
     if (req.method === "GET" && url.pathname === "/health") {
       json(res, 200, { ok: true });
+      return;
+    }
+
+    if (req.method === "GET" && url.pathname === "/health/indexers") {
+      const results = await Promise.all(
+        INDEXER_HEALTH_TARGETS.map(async (target) => {
+          try {
+            const data = (await proxyGet(target.url)) as {
+              ok?: boolean;
+              orgId?: string;
+              role?: string;
+              projections?: Record<string, number>;
+            };
+            return { ...target, ok: data.ok === true, ...data };
+          } catch (err) {
+            return {
+              name: target.name,
+              url: target.url,
+              ok: false,
+              error: err instanceof Error ? err.message : String(err),
+            };
+          }
+        })
+      );
+      json(res, 200, { ok: results.every((r) => r.ok), indexers: results });
       return;
     }
 

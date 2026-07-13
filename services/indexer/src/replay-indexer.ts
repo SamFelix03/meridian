@@ -139,6 +139,7 @@ export class IndexerStore {
 export class ReplayIndexer {
   private store: IndexerStore;
   private client: JsonLedgerClient;
+  private rebuildRecoveryAttempted = false;
 
   constructor(
     private config: {
@@ -177,16 +178,68 @@ export class ReplayIndexer {
     }
   }
 
+  /** Detect first-run poison: ACS empty (200-contract cap) + cursor jumped to ledger end. */
+  private isPoisonedCheckpoint(): boolean {
+    const cp = this.store.getCheckpoint();
+    if (!cp || cp.eventCount > 0) return false;
+
+    const hasLedgerTransactions = this.store.getAllEvents().some((e) => {
+      const payload = e.payload;
+      if (payload == null || typeof payload !== "object") return true;
+      return (payload as Record<string, unknown>).type !== "ACS_BOOTSTRAP";
+    });
+    if (hasLedgerTransactions) return false;
+
+    switch (this.config.role) {
+      case "Supplier":
+        return (
+          this.store.projections.getSupplierReceivables().length === 0 &&
+          this.store.projections.getFinancingRounds().length === 0 &&
+          this.store.projections.getPendingProposals().length === 0 &&
+          this.store.projections.getConsentPolicies().length === 0
+        );
+      case "Buyer":
+        return (
+          this.store.projections.getBuyerObligations().length === 0 &&
+          this.store.projections.getPendingProposals().length === 0
+        );
+      case "Financier":
+        return (
+          this.store.projections.getFinancierInvitations().length === 0 &&
+          this.store.projections.getFinancierMyBids(this.config.actingParty).length === 0 &&
+          this.store.projections.getFinancierMandates(this.config.actingParty).length === 0
+        );
+      case "PlatformOperator":
+        return this.store.projections.getSettlementAudits().length === 0;
+      case "Regulator":
+        return this.store.projections.getRegulatorExposureRows().length === 0;
+      default:
+        return false;
+    }
+  }
+
   async runOnce(): Promise<IndexerCheckpoint> {
+    if (this.isPoisonedCheckpoint()) {
+      if (this.rebuildRecoveryAttempted) {
+        console.warn(
+          `[${this.config.orgId}] projections still empty after rebuild recovery — manual re-index may be required`
+        );
+      } else {
+        this.rebuildRecoveryAttempted = true;
+        console.warn(
+          `[${this.config.orgId}] empty projections with no ledger history — rebuilding index`
+        );
+        return this.rebuild();
+      }
+    }
+
     const existing = this.store.getCheckpoint();
-    const beginExclusive =
-      existing?.lastOffset && existing.lastOffset !== ""
-        ? existing.lastOffset
-        : undefined;
+    let acsBootstrapped = 0;
 
     // Bootstrap ACS on first run
     if (!existing) {
       const contracts = await this.safeGetActiveContracts();
+      acsBootstrapped = contracts.length;
       for (const c of contracts) {
         this.store.appendEvent({
           offset: "0",
@@ -196,21 +249,45 @@ export class ReplayIndexer {
         });
         this.projectContractCreate(c.templateId, c.contractId, c.payload as Record<string, unknown>, "0");
       }
+      if (acsBootstrapped === 0) {
+        console.warn(
+          `[${this.config.orgId}] ACS bootstrap returned 0 contracts — replaying update stream from genesis`
+        );
+      }
     }
 
-    const { updates, endOffset } = await this.client.getUpdates({
-      party: this.config.actingParty,
-      beginExclusive,
-    });
+    const replayFromGenesis = !existing && acsBootstrapped === 0;
+    let cursor: string | undefined =
+      existing?.lastOffset && existing.lastOffset !== ""
+        ? existing.lastOffset
+        : replayFromGenesis
+          ? "0"
+          : undefined;
 
-    for (const u of updates) {
-      this.store.appendEvent({
-        offset: u.offset,
-        updateId: u.updateId,
-        recordTime: u.recordTime,
-        payload: u.events,
+    const maxBatches = replayFromGenesis ? 100 : 1;
+    let endOffset = cursor ?? "0";
+
+    for (let batch = 0; batch < maxBatches; batch++) {
+      const { updates, endOffset: batchEnd } = await this.client.getUpdates({
+        party: this.config.actingParty,
+        beginExclusive: cursor,
       });
-      this.processTransactionEvents(u.events, u.offset, u.recordTime);
+      endOffset = batchEnd;
+
+      for (const u of updates) {
+        this.store.appendEvent({
+          offset: u.offset,
+          updateId: u.updateId,
+          recordTime: u.recordTime,
+          payload: u.events,
+        });
+        this.processTransactionEvents(u.events, u.offset, u.recordTime);
+      }
+
+      if (!replayFromGenesis || updates.length === 0 || batchEnd === cursor) {
+        break;
+      }
+      cursor = batchEnd;
     }
 
     await this.reconcileActiveContracts();

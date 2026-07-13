@@ -4,7 +4,8 @@ set -euo pipefail
 export PORT="${PORT:-8080}"
 
 mkdir -p /data/indexer /data/kyb /data/provisioner
-mkdir -p /app/data/indexer
+mkdir -p /app/data
+rm -rf /app/data/indexer
 ln -sfn /data/indexer /app/data/indexer
 
 envsubst '${PORT}' < /app/docker/nginx.conf.template > /etc/nginx/conf.d/default.conf

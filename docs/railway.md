@@ -184,8 +184,7 @@ Open http://localhost:8080
 | Symptom | Fix |
 |---------|-----|
 | Ops → Regulator Admin `fetch failed` | Platform/regulator indexers still catching up — wait ~60s or check logs |
-| Empty supplier receivables but buyer has data | Supplier party exceeds DevNet ACS 200-contract cap — indexer replays from genesis on deploy (fixed in recent builds). Check `GET /api/health/indexers` — supplier `projections.receivables` should be >0 after ~2–5 min. |
-| Indexer state resets every deploy | Volume must mount at `/data`; entrypoint symlinks `/app/data/indexer` → `/data/indexer` |
+| Empty tables after deploy | Volume not mounted at `/data`; indexers rebuilding |
 | Agent tick disabled | Set `GROQ_API_KEY` |
 | 502 on first load | Health check may pass before all indexers are warm — retry |
 

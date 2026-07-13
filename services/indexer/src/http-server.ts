@@ -34,38 +34,6 @@ export function startIndexerHttpServer(
   return server;
 }
 
-function projectionStats(
-  store: ProjectionStore,
-  config: IndexerHttpConfig
-): Record<string, number> {
-  switch (config.role) {
-    case "Supplier":
-      return {
-        receivables: store.getSupplierReceivables().length,
-        proposals: store.getPendingProposals().length,
-        financingRounds: store.getFinancingRounds().length,
-        consentPolicies: store.getConsentPolicies().length,
-      };
-    case "Buyer":
-      return {
-        obligations: store.getBuyerObligations().length,
-        proposals: store.getPendingProposals().length,
-      };
-    case "Financier":
-      return {
-        invitations: store.getFinancierInvitations().length,
-        mandates: store.getFinancierMandates(config.actingParty ?? "").length,
-        myBids: store.getFinancierMyBids(config.actingParty ?? "").length,
-      };
-    case "PlatformOperator":
-      return { settlementAudits: store.getSettlementAudits().length };
-    case "Regulator":
-      return { exposureRows: store.getRegulatorExposureRows().length };
-    default:
-      return {};
-  }
-}
-
 async function handleRequest(
   req: IncomingMessage,
   res: ServerResponse,
@@ -97,12 +65,7 @@ async function handleRequest(
 
   try {
     if (url === "/health") {
-      json(res, 200, {
-        ok: true,
-        orgId: config.orgId,
-        role: config.role,
-        projections: projectionStats(store, config),
-      });
+      json(res, 200, { ok: true, orgId: config.orgId });
       return;
     }
 

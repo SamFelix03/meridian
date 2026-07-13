@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Scale, ShieldCheck } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { FileText, Plus, Scale, ShieldCheck } from "lucide-react";
 import { api, useNotifications, type SupplierReceivable } from "../api";
 import { usePageTab } from "../hooks/usePageTab";
 import { useFollowUpRefresh } from "../hooks/useFollowUpRefresh";
@@ -17,9 +17,8 @@ import { Checkbox, Field, FieldDescription, FieldGroup, FieldLabel } from "../co
 import { Input } from "../components/ui/Input";
 import { PageTabBar } from "../components/ui/PageTabBar";
 import { ActivityLogPanel } from "../components/ui/ActivityLogPanel";
-import { DataTable } from "../components/ui/DataTable";
 import { objectToRecordFields, RecordCardGrid } from "../components/ui/RecordCardGrid";
-import { formatIdTimestamp, sortByIdTimeDesc, truncateParty } from "../lib/utils";
+import { truncateParty } from "../lib/utils";
 
 const SUPPLIER_TABS = ["invoices", "proofs", "consent"] as const;
 
@@ -157,11 +156,6 @@ export function SupplierPage() {
 
   const activePolicies = policies.filter((p) => p.allowsAssignment !== false);
 
-  const sortedReceivables = useMemo(
-    () => sortByIdTimeDesc(receivables, (r) => r.receivableId),
-    [receivables]
-  );
-
   return (
     <div className="space-y-6">
       <PageHeader
@@ -203,78 +197,25 @@ export function SupplierPage() {
             />
           </Surface>
 
-          {sortedReceivables.length === 0 ? (
+          {receivables.length === 0 ? (
             <EmptyState>No receivables yet — propose an invoice to get started.</EmptyState>
           ) : (
-            <DataTable
-              data={sortedReceivables}
-              rowKey={(r) => r.contractId}
-              emptyMessage="No receivables yet — propose an invoice to get started."
-              detailTitle={(r) => r.receivableId}
-              detailDescription={(r) =>
-                `${r.faceValue} ${r.currency} · due ${r.dueDate} · ${r.state}`
-              }
-              detailFields={(r) => [
-                { label: "Receivable", value: r.receivableId },
-                { label: "Buyer", value: truncateParty(r.buyer, 40), mono: true },
-                { label: "Amount", value: `${r.faceValue} ${r.currency}` },
-                { label: "Due date", value: r.dueDate },
-                { label: "Issued", value: formatIdTimestamp(r.receivableId) },
-                { label: "State", value: r.state },
-                { label: "Contract ID", value: r.contractId, mono: true },
-                ...(r.lineItems.length > 0
-                  ? [
-                      {
-                        label: "Line items",
-                        value: r.lineItems
-                          .map((li) => `${li.description}: ${li.quantity} × ${li.unitPrice}`)
-                          .join("\n"),
-                      },
-                    ]
-                  : []),
-              ]}
-              columns={[
-                {
-                  id: "receivable",
-                  header: "Receivable",
-                  cell: (r) => <span className="font-medium">{r.receivableId}</span>,
-                },
-                {
-                  id: "buyer",
-                  header: "Buyer",
-                  cell: (r) => truncateParty(r.buyer, 20),
-                },
-                {
-                  id: "amount",
-                  header: "Amount",
-                  cell: (r) => `${r.faceValue} ${r.currency}`,
-                },
-                {
-                  id: "due",
-                  header: "Due date",
-                  cell: (r) => r.dueDate,
-                },
-                {
-                  id: "issued",
-                  header: "Issued",
-                  cell: (r) => (
-                    <span className="text-muted-foreground">
-                      {formatIdTimestamp(r.receivableId)}
-                    </span>
-                  ),
-                },
-                {
-                  id: "state",
-                  header: "State",
-                  cell: (r) => <Badge variant="secondary">{r.state}</Badge>,
-                },
-                {
-                  id: "action",
-                  header: "Action",
-                  isAction: true,
-                  align: "right",
-                  cell: (r) =>
-                    r.state === "Issued" ? (
+            <div className="grid gap-4">
+              {receivables.map((r) => (
+                <Card key={r.contractId}>
+                  <div className="flex flex-wrap items-start justify-between gap-3">
+                    <div className="space-y-1">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <FileText className="size-4 text-primary" />
+                        <strong className="font-heading text-foreground">{r.receivableId}</strong>
+                        <Badge>{r.state}</Badge>
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        Buyer: {truncateParty(r.buyer)} · {r.faceValue} {r.currency} · due{" "}
+                        {r.dueDate}
+                      </p>
+                    </div>
+                    {r.state === "Issued" && (
                       <Button
                         type="button"
                         size="sm"
@@ -287,12 +228,20 @@ export function SupplierPage() {
                         ) : null}
                         {postingId === r.contractId ? "Posting…" : "Post for bid"}
                       </Button>
-                    ) : (
-                      <span className="text-muted-foreground">—</span>
-                    ),
-                },
-              ]}
-            />
+                    )}
+                  </div>
+                  {r.lineItems.length > 0 && (
+                    <ul className="mt-3 space-y-1 border-t border-border pt-3 text-sm text-muted-foreground">
+                      {r.lineItems.map((li, i) => (
+                        <li key={i}>
+                          {li.description}: {li.quantity} × {li.unitPrice}
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </Card>
+              ))}
+            </div>
           )}
         </div>
       )}
